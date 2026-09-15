@@ -1,9 +1,14 @@
 // SocialLens — auth edge function
-//   POST /auth/instagram/callback  { code, state, code_verifier, redirect_uri }
+//   GET  /auth/instagram/redirect  ?code=&state=   (Instagram → here → back into the app)
+//   POST /auth/instagram/callback  { code, state, redirect_uri }
 //   POST /auth/logout              (Bearer session)
 //
-// Exchanges the OAuth code for an Instagram token (short → long lived), encrypts it,
-// stores it, and returns an opaque app session. The App Secret never leaves the server.
+// Meta only accepts HTTPS OAuth redirect URIs, so Instagram sends the user to
+// /auth/instagram/redirect; that route bounces them into the app via the deep link
+// carried inside `state` (sociallens://oauth for builds, exp:// for Expo Go).
+// The app then posts the code here; the server exchanges it for an Instagram token
+// (short → long lived), encrypts it, stores it and returns an opaque app session.
+// The App Secret never leaves the server.
 // deno-lint-ignore-file no-explicit-any
 import {
   clientIp,
@@ -20,8 +25,50 @@ import {
 
 const META_APP_ID = Deno.env.get('META_APP_ID') ?? '';
 const META_APP_SECRET = Deno.env.get('META_APP_SECRET') ?? '';
-const ALLOWED_REDIRECTS = (Deno.env.get('META_ALLOWED_REDIRECT_URIS') ?? 'sociallens://oauth').split(',').map((s) => s.trim());
+const ALLOWED_REDIRECTS = (Deno.env.get('META_ALLOWED_REDIRECT_URIS') ?? 'sociallens://oauth').split(',').map((s) => s.trim()).filter(Boolean);
+/** Deep-link schemes the redirect bridge may send the browser back to. */
+const RETURN_SCHEMES = (Deno.env.get('APP_RETURN_SCHEMES') ?? 'sociallens,exp,exps').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 const SESSION_TTL_DAYS = Number(Deno.env.get('SESSION_TTL_DAYS') ?? '30');
+
+/** The public HTTPS URL of this function's redirect route — what gets registered in the Meta console. */
+function bridgeUrl(req: Request): string {
+  const url = new URL(req.url);
+  const forwardedHost = req.headers.get('x-forwarded-host');
+  const origin = forwardedHost ? `https://${forwardedHost}` : url.origin;
+  return `${origin}${url.pathname.replace(//auth(/.*)?$/, '/auth')}/instagram/redirect`;
+}
+
+/** `state` is base64url(JSON { n: nonce, r: return_to }) built by the app. */
+function decodeState(state: string): { nonce: string; returnTo: string } | null {
+  try {
+    const padded = state.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (state.length % 4)) % 4);
+    const parsed = JSON.parse(atob(padded));
+    if (typeof parsed?.n !== 'string' || typeof parsed?.r !== 'string') return null;
+    return { nonce: parsed.n, returnTo: parsed.r };
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedReturn(returnTo: string): boolean {
+  const scheme = returnTo.split(':')[0]?.toLowerCase() ?? '';
+  return RETURN_SCHEMES.includes(scheme) && !/[s<>"]/.test(returnTo);
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Small HTML page that jumps back into the app (and offers a button if the browser blocks the redirect). */
+function bounceResponse(target: string): Response {
+  const safe = escapeHtml(target);
+  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SocialLens</title>
+<meta http-equiv="refresh" content="0;url=${safe}">
+<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}a{display:inline-block;margin-top:16px;padding:12px 20px;border-radius:8px;background:#0095f6;color:#fff;text-decoration:none;font-weight:600}</style></head>
+<body><div style="text-align:center"><p>Uygulamaya dönülüyor…</p><a href="${safe}">Uygulamaya dön</a></div>
+<script>location.replace(${JSON.stringify(target)});</script></body></html>`;
+  return new Response(html, { status: 302, headers: { Location: target, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
 
 async function exchangeCode(code: string, redirectUri: string, codeVerifier?: string) {
   // 1) short-lived token (Instagram Login)
@@ -57,6 +104,20 @@ Deno.serve(async (req) => {
   const path = url.pathname.replace(/^.*\/auth/, '');
   const db = serviceClient();
 
+  // Instagram lands here after the user approves (or cancels) on instagram.com.
+  if (req.method === 'GET' && path === '/instagram/redirect') {
+    const state = url.searchParams.get('state') ?? '';
+    const decoded = decodeState(state);
+    if (!decoded || !isAllowedReturn(decoded.returnTo)) return json({ error: 'Invalid state' }, 400);
+    const target = new URL(decoded.returnTo);
+    for (const key of ['code', 'error', 'error_reason', 'error_description']) {
+      const value = url.searchParams.get(key);
+      if (value) target.searchParams.set(key, value.replace(/#_$/, ''));
+    }
+    target.searchParams.set('state', state);
+    return bounceResponse(target.toString());
+  }
+
   if (req.method === 'POST' && path === '/instagram/callback') {
     if (!(await rateLimit(db, `ip:${clientIp(req)}:auth`, 10, 60))) return json({ error: 'Too many requests' }, 429);
     if (!META_APP_ID || !META_APP_SECRET) return json({ error: 'Server not configured' }, 500);
@@ -65,7 +126,7 @@ Deno.serve(async (req) => {
     const redirectUri = typeof body?.redirect_uri === 'string' ? body.redirect_uri : '';
     const codeVerifier = typeof body?.code_verifier === 'string' ? body.code_verifier : undefined;
     if (!code || !redirectUri) return json({ error: 'code and redirect_uri required' }, 400);
-    if (!ALLOWED_REDIRECTS.includes(redirectUri)) return json({ error: 'redirect_uri not allowed' }, 400);
+    if (redirectUri !== bridgeUrl(req) && !ALLOWED_REDIRECTS.includes(redirectUri)) return json({ error: 'redirect_uri not allowed' }, 400);
 
     let exchanged;
     try {

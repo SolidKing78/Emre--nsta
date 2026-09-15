@@ -63,6 +63,9 @@ interface MediaSeed {
   performance: number; // 0.5 .. 2.5 multiplier used for insights
 }
 
+/** "Artist · Song" lines shown under the username on reels (like Instagram's audio attribution). */
+const REEL_AUDIO = ['zmtprefabrik · Orijinal ses', 'Kenan Doğulu · Tutamıyorum Zamanı', 'Duman · Senden Daha Güzel', 'zmtprefabrik · Orijinal ses', 'Sezen Aksu · Kaybolan Yıllar', 'Tarkan · Kuzu Kuzu', 'zmtprefabrik · Orijinal ses', 'Mabel Matiz · Ya Bu İşler Ne', 'Ceza · Suspus'];
+
 const MEDIA_SEEDS: MediaSeed[] = [
   { type: 'REEL', caption: '120 m² çelik villa 18 günde teslim 🏡 Zemin hazırlığından anahtar teslime kadar tüm süreç bu videoda. #prefabrik #çelikvilla', daysAgo: 1, hour: 20, likes: 1_284, comments: 68, views: 24_500, performance: 1.6, pinned: true },
   { type: 'CAROUSEL_ALBUM', caption: 'Bodrum projemizin öncesi / sonrası. Kaydırarak inceleyin ➡️ 3 yatak odalı, 95 m², tamamı yalıtımlı.', daysAgo: 3, hour: 19, likes: 842, comments: 41, children: 5, location: 'Bodrum, Muğla', performance: 1.4 },
@@ -128,6 +131,7 @@ export const mockMedia: AppMedia[] = MEDIA_SEEDS.map((seed, index) => {
     username: MOCK_USERNAME,
     ownerAvatarUrl: mockAccount.profilePictureUrl,
     location: seed.location,
+    music: seed.type === 'REEL' ? (REEL_AUDIO[index % REEL_AUDIO.length] ?? undefined) : undefined,
     aspectRatio: isVertical ? 9 / 16 : 4 / 5,
     isPinned: seed.pinned,
     source: 'demo',
@@ -301,7 +305,8 @@ export function buildMockComments(mediaId: string): AppComment[] {
     const username = STORY_USERS[Math.floor(rng() * STORY_USERS.length)] ?? 'user';
     const text = COMMENT_TEXTS[Math.floor(rng() * COMMENT_TEXTS.length)] ?? '';
     const ts = new Date(new Date(media.timestamp).getTime() + (i + 1) * 3_600_000 * (1 + rng() * 5));
-    return { id: `${mediaId}-c${i}`, username, avatarUrl: avatar(`c-${username}`, 96), text, timestamp: ts.toISOString(), likeCount: Math.floor(rng() * 40) };
+    const likeCount = Math.floor(rng() * 40);
+    return { id: `${mediaId}-c${i}`, username, avatarUrl: avatar(`c-${username}`, 96), text, timestamp: ts.toISOString(), likeCount, replyCount: rng() > 0.55 ? 1 + Math.floor(rng() * 3) : 0 };
   });
 }
 

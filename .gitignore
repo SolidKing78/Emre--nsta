@@ -36,18 +36,17 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-example
 
 # generated native folders
 /ios
 /android
 
-# env
-.env
+# .env (mobile) is committed on purpose: it only holds EXPO_PUBLIC_* values (no secrets),
+# so a fresh clone runs with the same configuration.
 
 # tests
 coverage/
 
-# supabase local
+# supabase local — supabase/.env holds the Meta App Secret + token encryption key; never commit it
 supabase/.env
 supabase/.temp/

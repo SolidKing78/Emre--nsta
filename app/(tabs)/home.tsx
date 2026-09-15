@@ -7,6 +7,7 @@ import { IconButton } from '@/components/common/IconButton';
 import { Screen } from '@/components/common/Screen';
 import { PostSkeleton } from '@/components/common/Skeleton';
 import { EmptyState, ErrorState } from '@/components/common/States';
+import { CommentsSheet } from '@/components/feed/CommentsSheet';
 import { PostCard } from '@/components/feed/PostCard';
 import { PostOptionsSheet } from '@/components/feed/PostOptionsSheet';
 import { StoriesRow } from '@/components/feed/StoriesRow';
@@ -14,6 +15,7 @@ import { Wordmark } from '@/components/feed/Wordmark';
 import { HeartIcon, ShareIcon } from '@/components/icons';
 import { SimulationBanner } from '@/components/simulation/SimulationBadge';
 import { spacing } from '@/constants/theme';
+import { useContentPerformance } from '@/features/analytics/useContentPerformance';
 import { flattenMedia, useAccount, useMediaFeed, useRefreshAll, useStories } from '@/features/instagram/hooks';
 import { useEffectiveAccount, useEffectiveMedia, useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
@@ -33,9 +35,14 @@ export default function HomeScreen() {
   const simulation = useSimulationIndicators();
   const [refreshing, setRefreshing] = useState(false);
   const [options, setOptions] = useState<AppMedia | null>(null);
+  const [commentsFor, setCommentsFor] = useState<AppMedia | null>(null);
 
   const realMedia = useMemo(() => flattenMedia(feed.data?.pages), [feed.data]);
   const media = useEffectiveMedia(realMedia, effectiveAccount);
+  // Repost counts next to the ↻ icon come from the same per-post insights the profile grid uses.
+  const performance = useContentPerformance(media, effectiveAccount);
+  const sharesById = useMemo(() => Object.fromEntries(performance.items.map((p) => [p.media.id, p.shares])), [performance.items]);
+  const showFollow = effectiveAccount?.source === 'public';
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -58,9 +65,12 @@ export default function HomeScreen() {
         onPress={openDetail}
         onPressMore={setOptions}
         onPressInsights={openInsights}
+        onPressComments={setCommentsFor}
+        shareCount={sharesById[item.id]}
+        showFollow={showFollow}
       />
     ),
-    [effectiveAccount?.profilePictureUrl, effectiveAccount?.isVerified, openDetail, openInsights],
+    [effectiveAccount?.profilePictureUrl, effectiveAccount?.isVerified, openDetail, openInsights, sharesById, showFollow],
   );
 
   const header = (
@@ -138,6 +148,7 @@ export default function HomeScreen() {
       />
       {body}
       <PostOptionsSheet media={options} onClose={() => setOptions(null)} />
+      <CommentsSheet media={commentsFor} onClose={() => setCommentsFor(null)} />
     </Screen>
   );
 }

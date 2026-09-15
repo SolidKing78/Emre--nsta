@@ -93,6 +93,16 @@ export interface AppMedia {
   isPinned?: boolean;
   /** True for posts that exist only in the simulation overlay (never on Instagram). */
   isSimulated?: boolean;
+  /** Like / comment counts are estimates because the source did not expose them (yet). */
+  countsEstimated?: boolean;
+  /** Direct video file when the source exposes one (public reels / videos). */
+  videoUrl?: string;
+  /** Video length in seconds when known. */
+  durationSec?: number;
+  /** "Artist · Song" line for reels when the source exposes the audio attribution. */
+  music?: string;
+  /** Public reshare count when known; otherwise derived from insights. */
+  shareCount?: number;
   source: DataSource;
 }
 
@@ -148,6 +158,9 @@ export interface AppComment {
   text: string;
   timestamp: string;
   likeCount: number;
+  /** Number of replies under the comment (shown as "N diğer yanıtı gör"). */
+  replyCount?: number;
+  isVerified?: boolean;
 }
 
 export interface AppActivityItem {

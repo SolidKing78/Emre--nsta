@@ -50,9 +50,7 @@ export const en = {
   'auth.demo': 'Continue with demo account',
   'auth.public': 'View a public account',
   'auth.manual': 'Create a manual profile',
-  'auth.liveRequiresDevBuild':
-    'Real Instagram OAuth needs a Development Build (EAS). Expo Go cannot handle custom OAuth redirects.',
-  'auth.liveMissingConfig': 'Live mode is not configured. Set EXPO_PUBLIC_META_APP_ID and EXPO_PUBLIC_API_URL.',
+  'auth.liveMissingConfig': 'Instagram login needs setup: set EXPO_PUBLIC_META_APP_ID and EXPO_PUBLIC_API_URL in .env (README → Instagram login).',
   'auth.connecting': 'Connecting…',
   'auth.cancelled': 'Authorization was cancelled.',
   'auth.failed': 'Could not connect the account.',
@@ -119,6 +117,16 @@ export const en = {
   'feed.followerOnly': 'Followers',
   'feed.liked': 'Liked',
   'feed.captionMore': 'more',
+  'feed.more': 'more',
+  'feed.follow': 'Follow',
+  'comments.title': 'Comments',
+  'comments.forYou': 'For you',
+  'comments.newest': 'Newest',
+  'comments.reply': 'Reply',
+  'comments.viewReplies': 'View {n} more replies',
+  'comments.placeholder': 'What do you think about this?',
+  'comments.empty': 'No comments yet',
+  'comments.emptyBody': 'Start the conversation.',
 
   // ---- profile
   'profile.posts': 'posts',

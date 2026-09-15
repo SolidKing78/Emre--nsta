@@ -116,6 +116,10 @@ export const PublicWebMediaNodeSchema = z.object({
   is_video: z.boolean().optional(),
   video_view_count: z.number().optional(),
   video_play_count: z.number().nullable().optional(),
+  video_url: z.string().optional(),
+  video_duration: z.number().optional(),
+  /** Set by the SocialLens proxy when Instagram exposed no counts for the post. */
+  counts_estimated: z.boolean().optional(),
   taken_at_timestamp: z.number(),
   edge_liked_by: CountSchema.optional(),
   edge_media_preview_like: CountSchema.optional(),
@@ -132,6 +136,7 @@ export const PublicWebMediaNodeSchema = z.object({
             id: z.string(),
             display_url: z.string().optional(),
             is_video: z.boolean().optional(),
+            video_url: z.string().optional(),
           }),
         }),
       ),

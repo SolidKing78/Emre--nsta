@@ -2,8 +2,10 @@
 //   GET /instagram/account
 //   GET /instagram/media?after=<cursor>
 //   GET /instagram/media/:id
+//   GET /instagram/media/:id/comments
 //   GET /instagram/insights/account?since=YYYY-MM-DD&until=YYYY-MM-DD
 //   GET /instagram/insights/media/:id
+//   GET /instagram/insights/audience   (follower demographics; needs ≥100 followers)
 //
 // Never exposes the Instagram access token. Never writes to Instagram.
 // Refreshes long-lived tokens that are close to expiry and records metric snapshots.
@@ -138,6 +140,21 @@ Deno.serve(async (req) => {
     return json(res.body);
   }
 
+  const commentsMatch = path.match(/^\/media\/([^/]+)\/comments$/);
+  if (commentsMatch) {
+    const res = await graphGet(`/${commentsMatch[1]}/comments`, { fields: 'id,text,username,timestamp,like_count,replies{id}', limit: '50' }, token);
+    if (res.status >= 400) return mapGraphError(res.status, res.body);
+    const data = (Array.isArray(res.body?.data) ? res.body.data : []).map((c: any) => ({
+      id: String(c.id),
+      text: c.text ?? '',
+      username: c.username ?? '',
+      timestamp: c.timestamp ?? null,
+      like_count: c.like_count ?? 0,
+      reply_count: Array.isArray(c.replies?.data) ? c.replies.data.length : 0,
+    }));
+    return json({ data });
+  }
+
   const mediaMatch = path.match(/^\/media\/([^/]+)$/);
   if (mediaMatch) {
     const res = await graphGet(`/${mediaMatch[1]}`, { fields: MEDIA_FIELDS }, token);
@@ -171,6 +188,46 @@ Deno.serve(async (req) => {
     const data = await collectInsights(`/${mediaId}/insights`, {}, [isReel ? MEDIA_METRICS_REEL : MEDIA_METRICS_DEFAULT], token);
     await snapshotMetrics(db, session.accountRowId, mediaId, data);
     return json({ data });
+  }
+
+  if (path === '/insights/audience') {
+    // Percent shares per breakdown. Instagram returns raw follower counts per dimension.
+    const breakdown = async (dimension: string): Promise<{ label: string; value: number }[]> => {
+      const res = await graphGet('/me/insights', { metric: 'follower_demographics', period: 'lifetime', timeframe: 'this_month', metric_type: 'total_value', breakdown: dimension }, token);
+      const results: any[] = res.body?.data?.[0]?.total_value?.breakdowns?.[0]?.results ?? [];
+      const total = results.reduce((acc, r) => acc + (Number(r.value) || 0), 0) || 1;
+      return results
+        .map((r) => ({ label: String(r.dimension_values?.[0] ?? ''), value: Math.round(((Number(r.value) || 0) / total) * 1000) / 10 }))
+        .sort((a, b) => b.value - a.value);
+    };
+    const [ages, gender, cities, countries] = await Promise.all([breakdown('age'), breakdown('gender'), breakdown('city'), breakdown('country')]);
+    if (ages.length === 0 && gender.length === 0) return json({ error: 'Demographics unavailable', code: 'unsupported_metric' }, 404);
+    const women = gender.find((g) => g.label === 'F')?.value ?? 0;
+    const men = gender.find((g) => g.label === 'M')?.value ?? 0;
+
+    // Share of views that came from followers (last 30 days).
+    let followerShare: number | undefined;
+    const until = new Date();
+    const since = new Date(until.getTime() - 30 * 86_400_000);
+    const views = await graphGet('/me/insights', { metric: 'views', period: 'day', metric_type: 'total_value', breakdown: 'follower_type', since: since.toISOString().slice(0, 10), until: until.toISOString().slice(0, 10) }, token);
+    const viewResults: any[] = views.body?.data?.[0]?.total_value?.breakdowns?.[0]?.results ?? [];
+    if (viewResults.length) {
+      const total = viewResults.reduce((acc, r) => acc + (Number(r.value) || 0), 0) || 1;
+      const followers = viewResults.find((r) => String(r.dimension_values?.[0]).toUpperCase() === 'FOLLOWER');
+      followerShare = Math.round(((Number(followers?.value) || 0) / total) * 1000) / 1000;
+    }
+
+    // Hourly activity (0-23), normalised to 0..1. Not every account type exposes it.
+    let activeHours: number[] | undefined;
+    const online = await graphGet('/me/insights', { metric: 'online_followers', period: 'lifetime' }, token);
+    const hourly = online.body?.data?.[0]?.values?.[0]?.value;
+    if (hourly && typeof hourly === 'object') {
+      const raw = Array.from({ length: 24 }, (_, h) => Number(hourly[String(h)]) || 0);
+      const max = Math.max(...raw) || 1;
+      activeHours = raw.map((v) => Math.round((v / max) * 1000) / 1000);
+    }
+
+    return json({ follower_share: followerShare, gender: { women, men }, ages, cities: cities.slice(0, 5), countries: countries.slice(0, 5), active_hours: activeHours });
   }
 
   return json({ error: 'Not found' }, 404);

@@ -52,9 +52,7 @@ export const tr: Record<TranslationKey, string> = {
   'auth.demo': 'Demo Hesapla Devam Et',
   'auth.public': 'Herkese açık bir hesabı görüntüle',
   'auth.manual': 'Manuel profil oluştur',
-  'auth.liveRequiresDevBuild':
-    'Gerçek Instagram OAuth için Development Build (EAS) gerekir. Expo Go özel OAuth yönlendirmelerini desteklemez.',
-  'auth.liveMissingConfig': 'Canlı mod yapılandırılmamış. EXPO_PUBLIC_META_APP_ID ve EXPO_PUBLIC_API_URL değerlerini ayarlayın.',
+  'auth.liveMissingConfig': 'Instagram ile giriş için kurulum gerekiyor: .env dosyasında EXPO_PUBLIC_META_APP_ID ve EXPO_PUBLIC_API_URL değerlerini ayarlayın (README → Instagram ile giriş).',
   'auth.connecting': 'Bağlanıyor…',
   'auth.cancelled': 'Yetkilendirme iptal edildi.',
   'auth.failed': 'Hesap bağlanamadı.',
@@ -122,6 +120,16 @@ export const tr: Record<TranslationKey, string> = {
   'feed.followerOnly': 'Takipçiler',
   'feed.liked': 'Beğenildi',
   'feed.captionMore': 'daha fazla',
+  'feed.more': 'devamı',
+  'feed.follow': 'Takip Et',
+  'comments.title': 'Yorumlar',
+  'comments.forYou': 'Senin için',
+  'comments.newest': 'En yeniler',
+  'comments.reply': 'Yanıtla',
+  'comments.viewReplies': '{n} diğer yanıtı gör',
+  'comments.placeholder': 'Bunun hakkında ne düşünüyorsun?',
+  'comments.empty': 'Henüz yorum yok',
+  'comments.emptyBody': 'Sohbeti başlat.',
 
   // ---- profile
   'profile.posts': 'gönderi',

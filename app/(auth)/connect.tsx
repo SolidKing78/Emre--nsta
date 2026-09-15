@@ -13,7 +13,7 @@ import { radius, spacing } from '@/constants/theme';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { upperCase, useLanguage, useT } from '@/i18n';
-import { isExpoGo, isLiveConfigured, signInDemo, signInLive } from '@/services/auth/authService';
+import { isLiveConfigured, signInDemo, signInLive } from '@/services/auth/authService';
 import { isAppError } from '@/types/errors';
 
 
@@ -29,7 +29,7 @@ export default function ConnectScreen() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const liveDisabledReason = !isLiveConfigured() ? t('auth.liveMissingConfig') : isExpoGo ? t('auth.liveRequiresDevBuild') : null;
+  const liveDisabledReason = !isLiveConfigured() ? t('auth.liveMissingConfig') : null;
 
   const connectLive = async () => {
     setMessage(null);

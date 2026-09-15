@@ -5,21 +5,20 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { MetricRow } from '@/components/analytics/MetricRow';
 import { RetentionChart } from '@/components/analytics/RetentionChart';
 import { AppHeader } from '@/components/common/AppHeader';
-import { Avatar } from '@/components/common/Avatar';
 import { Button } from '@/components/common/Button';
-import { Card, Chip, Divider, SectionTitle } from '@/components/common/Primitives';
+import { Card, Chip, SectionTitle } from '@/components/common/Primitives';
 import { Screen } from '@/components/common/Screen';
 import { PostSkeleton } from '@/components/common/Skeleton';
 import { ErrorState } from '@/components/common/States';
 import { StatCounter } from '@/components/common/StatCounter';
 import { Text } from '@/components/common/Text';
+import { CommentsSheet } from '@/components/feed/CommentsSheet';
 import { PostCard } from '@/components/feed/PostCard';
 import { PostOptionsSheet } from '@/components/feed/PostOptionsSheet';
 import { FlaskIcon, InfoIcon } from '@/components/icons';
 import { SimulationBadge } from '@/components/simulation/SimulationBadge';
 import { useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
 import { radius, spacing } from '@/constants/theme';
-import { useComments } from '@/features/instagram/hooks';
 import { useMediaDetail } from '@/features/instagram/useMediaDetail';
 import { useDisplayMetrics, useSimulationEnabled, useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
@@ -27,7 +26,7 @@ import { upperCase, useLanguage, useT } from '@/i18n';
 import { engagementFromMetrics } from '@/services/analytics/engagement';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { AppMedia, MetricKey } from '@/types/app';
-import { formatLongDate, formatRelativeShort } from '@/utils/date';
+import { formatLongDate } from '@/utils/date';
 import { formatPercent } from '@/utils/format';
 
 const OVERVIEW: MetricKey[] = ['views', 'reach', 'interactions'];
@@ -50,7 +49,7 @@ export default function MediaDetailScreen() {
   const [options, setOptions] = useState<AppMedia | null>(null);
 
   const detail = useMediaDetail(id);
-  const { data: comments } = useComments(detail.isSimulatedPost ? undefined : id);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const metrics = useDisplayMetrics(detail.scope, detail.realInsight?.metrics);
   const byKey = (key: MetricKey) => metrics.find((m) => m.key === key);
   const available = useMemo(() => new Set(metrics.map((m) => m.key)), [metrics]);
@@ -109,6 +108,7 @@ export default function MediaDetailScreen() {
               verified={detail.account?.isVerified}
               expanded
               onPressMore={setOptions}
+              onPressComments={() => setCommentsOpen(true)}
               onPressInsights={() => scrollRef.current?.scrollTo({ y: insightsY - 8, animated: true })}
               shareCount={available.has('shares') ? byKey('shares')?.value : undefined}
             />
@@ -239,30 +239,6 @@ export default function MediaDetailScreen() {
               )}
             </View>
 
-            {/* Comments (only when the source provides them) */}
-            {comments && comments.length > 0 ? (
-              <View style={styles.comments}>
-                <Divider />
-                <Text variant="captionStrong" color="secondary" style={[styles.sectionLabel, { marginTop: spacing.lg }]}>
-                  {upperCase(t('media.comments'), language)}
-                </Text>
-                {comments.map((c) => (
-                  <View key={c.id} style={styles.comment}>
-                    <Avatar uri={c.avatarUrl} size={32} name={c.username} />
-                    <View style={{ flex: 1, marginLeft: spacing.md }}>
-                      <Text variant="feed">
-                        <Text variant="feedStrong">{c.username} </Text>
-                        {c.text}
-                      </Text>
-                      <Text variant="small" color="secondary" style={{ marginTop: 2 }}>
-                        {formatRelativeShort(c.timestamp, language)}
-                        {c.likeCount > 0 ? `  ·  ${c.likeCount} ${t('metric.likes').toLowerCase()}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : null}
             {media.isSimulated && indicators ? (
               <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
                 <Chip label={t('feed.simulatedPost')} tone="simulation" />
@@ -272,6 +248,7 @@ export default function MediaDetailScreen() {
         )}
       </ScrollView>
       <PostOptionsSheet media={options} onClose={() => setOptions(null)} />
+      <CommentsSheet media={commentsOpen && media ? media : null} onClose={() => setCommentsOpen(false)} />
     </Screen>
   );
 }

@@ -13,6 +13,8 @@ React Native + Expo + TypeScript ile yazılmıştır; Expo Go'da demo modunda ta
 
 ---
 
+> **Başka PC'de devam edecekler için:** güncel durum, bugün yapılanlar ve bekleyen işler **[HANDOFF.md](HANDOFF.md)** dosyasında.
+
 ## İçindekiler
 
 1. [Requirements (Gereksinimler)](#1-requirements-gereksinimler)
@@ -96,7 +98,7 @@ Mobil uygulama yalnızca `EXPO_PUBLIC_*` değişkenlerini okur. **Bu dosyaya asl
 | `EXPO_PUBLIC_APP_MODE` | `demo` (Expo Go) veya `live` (Development Build + backend) |
 | `EXPO_PUBLIC_API_URL` | Backend taban URL'si, örn. `https://<ref>.supabase.co/functions/v1` |
 | `EXPO_PUBLIC_META_APP_ID` | Meta uygulama ID'si (public identifier) |
-| `EXPO_PUBLIC_META_REDIRECT_URI` | Meta konsolunda kayıtlı redirect URI, örn. `sociallens://oauth` |
+| `EXPO_PUBLIC_META_REDIRECT_URI` | (İsteğe bağlı) Meta konsolunda kayıtlı redirect URI. Boş bırakılırsa `<EXPO_PUBLIC_API_URL>/auth/instagram/redirect` köprüsü kullanılır (Expo Go dahil çalışır) |
 | `EXPO_PUBLIC_PUBLIC_PROFILE_PROXY_URL` | (İsteğe bağlı) herkese açık profil proxy'si, örn. `https://<ref>.supabase.co/functions/v1/public-profile` |
 
 Sunucu tarafı secret'ları (`META_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) yalnızca `supabase/.env` içinde tutulur ve `supabase secrets set` ile yüklenir. Bkz. `supabase/.env.example`.
@@ -114,21 +116,31 @@ Demo verisi Meta API shape'ine yakın normalize edilmiştir (`mocks/mockData.ts`
 
 ## 5. Public Account Mode (Herkese açık hesap)
 
-Bağlantı ekranında **"Herkese açık bir hesabı görüntüle"** → kullanıcı adı girin. Uygulama Instagram'ın giriş gerektirmeyen herkese açık profil uç noktasından (`web_profile_info`) hesabın profil bilgisini, sayılarını ve son gönderilerini salt okunur çeker ve Instagram görünümünde gösterir.
+**Arama sekmesinde** (veya bağlantı ekranında "Herkese açık bir hesabı görüntüle") kullanıcı adını yazın → hesap, Instagram görünümünde açılır. Giriş yok, şifre yok, yalnızca okuma.
+
+Nasıl çalışır (`services/instagram/PublicInstagramProvider.ts` + `publicWebParser.ts`):
+
+1. **Profil sayfası (HTML)** — `https://www.instagram.com/<kullanıcı>/` mobil tarayıcı olarak çekilir. Instagram bu sayfaya profil bilgisini (takipçi/takip/gönderi sayısı, bio, avatar, doğrulama, gizlilik) ve **son 12 gönderiyi** gömülü JSON olarak koyar. Bu yol, sık rate-limit yiyen JSON uç noktalarının aksine doğrudan çalışır (~0,6 sn).
+2. **Gönderi sayıları (embed)** — her gönderi için `https://www.instagram.com/p/<kod>/embed/captioned/` sayfasından gerçek **beğeni / yorum / izlenme / süre** okunur (4 paralel istek, ~2 sn). Sayılar gelene kadar takipçi sayısına göre hesaplanan geçici tahminler gösterilir; gerçek sayı gelince ekran kendini günceller. Sonuçlar 6 saat önbelleklenir.
+3. **Daha fazla gönderi** — kaydırınca Instagram'ın çıkış yapmış ızgara sorgusu (`PolarisProfilePostsLoggedOutTabGridUIContentQuery`) denenir; Instagram reddederse liste 12 gönderide kalır.
+4. **Yedekler** — HTML yolu engellenirse sırasıyla `web_profile_info` JSON uç noktaları ve (yapılandırıldıysa) `supabase/functions/public-profile` proxy'si denenir; hepsi başarısızsa son başarılı önbellek gösterilir.
 
 Bilinmesi gerekenler:
 
-- Instagram bu uç noktayı IP bazlı **rate limit** uygular. Uygulama sırasıyla `www.instagram.com` → `i.instagram.com` → (yapılandırıldıysa) sunucu proxy'sini dener; başarısız olursa **son başarılı önbelleği** gösterir ve kullanıcı dostu hata ekranı çıkarır. Mobil/ev ağlarında genelde doğrudan çalışır; sunucu proxy'si için `supabase/functions/public-profile` deploy edip `EXPO_PUBLIC_PUBLIC_PROFILE_PROXY_URL` verin.
-- Instagram, sahibi olmadığınız hesapların **içgörülerini (görüntülenme, erişim vb.) vermez**. Bu değerler herkese açık etkileşimden deterministik biçimde **tahmin edilir** ve UI'da **"Tahmini"** olarak etiketlenir. Simülasyon Modunda hepsi elle düzenlenebilir.
-- Gizli hesaplar yalnızca profil sayılarıyla, "Bu hesap gizli" durumuyla gösterilir.
-- Alternatif: **"Manuel profil oluştur"** ile tamamen elle (fotoğraf, isim, sayılar, galeriden gönderiler) bir profil kurabilirsiniz; Instagram'a hiç bağlanmaz.
+- Instagram, sahibi olmadığınız hesapların **içgörülerini (erişim, profil ziyareti vb.) vermez**. Bunlar gerçek etkileşimden deterministik biçimde türetilir ve Senaryo modunda elle düzenlenebilir.
+- Büyük hesaplarda gönderi sayısı Instagram'ın yuvarladığı değerdir ("32K").
+- Gizli hesaplar yalnızca profil sayılarıyla gösterilir. Olmayan kullanıcı adı "Bulunamadı" verir.
+- Alternatif: **"Manuel profil oluştur"** ile tamamen elle bir profil kurabilirsiniz; Instagram'a hiç bağlanmaz.
 
 ## 6. Live Mode
 
 `EXPO_PUBLIC_APP_MODE=live` + `EXPO_PUBLIC_API_URL` + `EXPO_PUBLIC_META_APP_ID` tanımlı olmalıdır. Akış:
 
 ```
-Expo App ──(OAuth code, PKCE)──▶ Supabase Edge Function (auth) ──▶ Meta token exchange
+Expo App ──▶ instagram.com/oauth/authorize (resmi sayfa) ──▶ <API_URL>/auth/instagram/redirect (HTTPS köprü)
+   ▲                                                                  │ deep link: sociallens://oauth  |  exp://… (Expo Go)
+   └──────────────────────── code + state ◀─────────────────────────────┘
+Expo App ──(code)──▶ Supabase Edge Function (auth) ──▶ Meta token exchange
    ▲                                   │ token AES-256-GCM ile şifrelenir, DB'ye yazılır
    └──── app session token ◀───────────┘
 Expo App ──(Bearer session)──▶ Edge Function (instagram) ──▶ Graph API (READ-ONLY)
@@ -136,7 +148,17 @@ Expo App ──(Bearer session)──▶ Edge Function (instagram) ──▶ Gra
 
 Uygulama hiçbir zaman Instagram access token'ını görmez; yalnızca kendi opak oturum token'ını SecureStore'da saklar. Token süresi dolunca **"Yeniden bağlantı gerekli"** ekranı çıkar.
 
-**Expo Go canlı modu desteklemez** (özel OAuth scheme kısıtı). Development Build gerekir (bkz. §9).
+**Expo Go'da da çalışır:** Meta yalnızca HTTPS redirect kabul ettiği için Instagram kullanıcıyı backend köprüsüne yollar; köprü, `state` içindeki deep link ile (`exp://…` veya `sociallens://oauth`) uygulamaya geri döner. Mağaza/production build için yine Development Build önerilir (bkz. §9).
+
+### Instagram ile giriş — 10 dakikada kurulum
+
+1. **Supabase**: `supabase link --project-ref <ref>` → `supabase db push` → `supabase secrets set --env-file supabase/.env` → `supabase functions deploy auth instagram public-profile`.
+2. **Meta konsolu**: uygulama → Instagram → *API setup with Instagram login* → *Business login settings* → **OAuth redirect URIs** alanına şunu ekleyin:
+   `https://<ref>.supabase.co/functions/v1/auth/instagram/redirect`
+3. **Mobil `.env`**: `EXPO_PUBLIC_APP_MODE=live`, `EXPO_PUBLIC_API_URL=https://<ref>.supabase.co/functions/v1`, `EXPO_PUBLIC_META_APP_ID=<App ID>`; `EXPO_PUBLIC_META_REDIRECT_URI` boş kalsın.
+4. `npx expo start -c` → bağlantı ekranında **Instagram ile Bağlan** → Instagram'ın kendi sayfasında onay → uygulamaya otomatik dönüş.
+
+Hesap **Business/Creator** olmalı ve uygulama geliştirme modundayken *Instagram Testers* listesine eklenmiş olmalıdır.
 
 ## 7. Meta Developer Setup
 
@@ -149,10 +171,9 @@ Uygulama hiçbir zaman Instagram access token'ını görmez; yalnızca kendi opa
 
 ## 8. OAuth Setup
 
-- Uygulama scheme'i: `sociallens` (`app.json` → `scheme`). Varsayılan redirect: `sociallens://oauth`.
-- Meta konsolu → Instagram → *Business login settings* → **OAuth redirect URIs** listesine aynı URI'yi ekleyin.
-- Edge function `META_ALLOWED_REDIRECT_URIS` env'inde de aynı listeyi tutun (redirect validation).
-- Akış: Authorization Code Flow + **state** doğrulaması + PKCE (`code_challenge` S256; Meta yok sayarsa zararsızdır). Kod değişimi ve long-lived token yenileme (`ig_refresh_token`, 7 günden az kaldığında) backend'de yapılır.
+- Meta'ya verilen redirect URI: `<API_URL>/auth/instagram/redirect` (HTTPS köprü; edge function kendi adresini otomatik kabul eder). Özel bir URI kullanacaksanız `EXPO_PUBLIC_META_REDIRECT_URI` + `META_ALLOWED_REDIRECT_URIS` ile tanımlayın.
+- Köprünün geri dönebileceği deep-link şemaları: `APP_RETURN_SCHEMES` (varsayılan `sociallens,exp,exps`). Uygulama scheme'i `sociallens` (`app.json`).
+- Akış: Authorization Code Flow + **state** doğrulaması (state = base64url `{ nonce, return_to }`; uygulama nonce'u, köprü return_to'yu doğrular). Kod değişimi ve long-lived token yenileme (`ig_refresh_token`, 7 günden az kaldığında) backend'de yapılır. Meta'nın Instagram Login akışı PKCE tanımlamaz; güvenlik, secret'ın yalnızca backend'de olmasından gelir.
 
 ## 9. Development Build
 

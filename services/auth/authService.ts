@@ -7,8 +7,7 @@ import { API_URL, META_APP_ID, META_OAUTH_AUTHORIZE_URL, META_OAUTH_SCOPES, META
 import { MOCK_USERNAME } from '@/mocks/mockData';
 import { BackendSessionSchema } from '@/schemas/instagram';
 import { httpJson } from '@/services/api/httpClient';
-import { fetchPublicUser, USERNAME_PATTERN } from '@/services/instagram/PublicInstagramProvider';
-import { normalizePublicProfile } from '@/services/instagram/normalize';
+import { fetchPublicProfile, primePublicSnapshot, USERNAME_PATTERN } from '@/services/instagram/PublicInstagramProvider';
 import { dropAllProviders } from '@/services/instagram/providerFactory';
 import { buildAccountKey, useAuthStore, type AppSession } from '@/store/authStore';
 import { useManualProfileStore, type ManualProfile } from '@/store/manualProfileStore';
@@ -56,8 +55,10 @@ export function normalizeUsernameInput(raw: string): string {
 export async function signInPublic(rawUsername: string): Promise<AppSession> {
   const username = normalizeUsernameInput(rawUsername);
   if (!USERNAME_PATTERN.test(username)) throw new AppError('not_found', 'invalid_username');
-  const user = await fetchPublicUser(username);
-  const { account } = normalizePublicProfile(user);
+  const result = await fetchPublicProfile(username);
+  const { account } = result;
+  // The provider created right after sign-in reads this snapshot instead of fetching the page again.
+  await primePublicSnapshot(account.username, result);
   const session: AppSession = {
     source: 'public',
     accountKey: buildAccountKey('public', account.username),
@@ -123,7 +124,7 @@ export function createManualAccount(input: {
 }
 
 /* ------------------------------------------------------------------ */
-/* Live — Meta OAuth (Authorization Code + PKCE, exchange on backend)   */
+/* Live — Instagram Business Login (code exchanged on the backend)      */
 /* ------------------------------------------------------------------ */
 
 async function randomString(bytes = 32): Promise<string> {
@@ -131,29 +132,46 @@ async function randomString(bytes = 32): Promise<string> {
   return Array.from(buffer, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** base64url for ASCII input (the state payload only ever contains a hex nonce and a URL). */
 function base64UrlEncode(input: string): string {
-  return input.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  let out = '';
+  for (let i = 0; i < input.length; i += 3) {
+    const a = input.charCodeAt(i);
+    const b = i + 1 < input.length ? input.charCodeAt(i + 1) : NaN;
+    const c = i + 2 < input.length ? input.charCodeAt(i + 2) : NaN;
+    const triple = (a << 16) | ((Number.isNaN(b) ? 0 : b) << 8) | (Number.isNaN(c) ? 0 : c);
+    out += BASE64[(triple >> 18) & 63]! + BASE64[(triple >> 12) & 63]!;
+    out += Number.isNaN(b) ? '' : BASE64[(triple >> 6) & 63]!;
+    out += Number.isNaN(c) ? '' : BASE64[triple & 63]!;
+  }
+  return out.split('+').join('-').split('/').join('_');
 }
 
-async function buildPkce(): Promise<{ verifier: string; challenge: string }> {
-  const verifier = await randomString(48);
-  const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, verifier, {
-    encoding: Crypto.CryptoEncoding.BASE64,
-  });
-  return { verifier, challenge: base64UrlEncode(digest) };
+/** Where Instagram sends the browser: the backend bridge (HTTPS, as Meta requires) or a custom-scheme URI. */
+export function liveRedirectUri(): string {
+  return META_REDIRECT_URI;
+}
+
+/** Where the bridge sends the browser back to: `sociallens://oauth` in builds, `exp://…/--/oauth` in Expo Go. */
+export function liveReturnUri(): string {
+  return AuthSession.makeRedirectUri({ scheme: 'sociallens', path: 'oauth' });
 }
 
 /**
  * Opens the OFFICIAL Instagram authorization page. The app never sees credentials.
  * The resulting `code` is exchanged by the backend (which owns the app secret).
+ * Works in Expo Go too, because the backend bridge turns Meta's HTTPS redirect
+ * into the deep link carried inside `state`.
  */
 export async function signInLive(): Promise<AppSession> {
   if (!isLiveConfigured()) throw new AppError('unknown', 'live_not_configured');
-  if (isExpoGo) throw new AppError('unknown', 'expo_go_unsupported');
 
-  const state = await randomString(16);
-  const pkce = await buildPkce();
-  const redirectUri = META_REDIRECT_URI || AuthSession.makeRedirectUri({ scheme: 'sociallens', path: 'oauth' });
+  const nonce = await randomString(16);
+  const returnTo = liveReturnUri();
+  const redirectUri = liveRedirectUri();
+  const state = base64UrlEncode(JSON.stringify({ n: nonce, r: returnTo }));
 
   const params = new URLSearchParams({
     client_id: META_APP_ID,
@@ -161,19 +179,17 @@ export async function signInLive(): Promise<AppSession> {
     response_type: 'code',
     scope: META_OAUTH_SCOPES.join(','),
     state,
-    code_challenge: pkce.challenge,
-    code_challenge_method: 'S256',
   });
   const authUrl = `${META_OAUTH_AUTHORIZE_URL}?${params.toString()}`;
 
-  const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri, { preferEphemeralSession: true });
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, returnTo, { preferEphemeralSession: true });
   if (result.type !== 'success') throw new AppError('unknown', 'cancelled');
 
   const returned = new URL(result.url);
   const code = returned.searchParams.get('code');
   const returnedState = returned.searchParams.get('state');
   const errorReason = returned.searchParams.get('error_reason') ?? returned.searchParams.get('error');
-  if (errorReason) throw new AppError('unknown', errorReason === 'user_denied' ? 'cancelled' : errorReason);
+  if (errorReason) throw new AppError('unknown', errorReason === 'user_denied' || errorReason === 'access_denied' ? 'cancelled' : errorReason);
   if (!code) throw new AppError('unknown', 'missing_code');
   if (returnedState !== state) throw new AppError('unknown', 'state_mismatch');
 
@@ -182,7 +198,7 @@ export async function signInLive(): Promise<AppSession> {
 
   const json = await httpJson(`${API_URL}/auth/instagram/callback`, {
     method: 'POST',
-    body: { code: cleanCode, state, code_verifier: pkce.verifier, redirect_uri: redirectUri },
+    body: { code: cleanCode, state, redirect_uri: redirectUri },
     authAware: false,
   });
   const parsed = BackendSessionSchema.safeParse(json);

@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { MetricEditorProvider } from '@/components/simulation/SimulationMetricEditor';
+import { useProviderRefinements } from '@/features/instagram/hooks';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/store/authStore';
 import { useManualProfileStore } from '@/store/manualProfileStore';
@@ -41,6 +42,12 @@ function useHydrated(): boolean {
   const c = useSimulationStore((s) => s.hydrated);
   const d = useManualProfileStore((s) => s.hydrated);
   return a && b && c && d;
+}
+
+/** Keeps queries in sync with background refinements from the active provider. */
+function ProviderRefinements() {
+  useProviderRefinements();
+  return null;
 }
 
 /** Redirects to the reconnect screen whenever a live session expires. */
@@ -90,6 +97,7 @@ function Navigation() {
     <ThemeProvider value={navTheme}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <AuthExpiryGuard />
+      <ProviderRefinements />
       <MetricEditorProvider>
         <Stack
           screenOptions={{

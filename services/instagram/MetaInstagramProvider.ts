@@ -7,7 +7,7 @@ import {
 } from '@/schemas/instagram';
 import { httpJson } from '@/services/api/httpClient';
 import { estimateAudience } from '@/services/analytics/audienceEstimator';
-import type { AppAccount, AppAudience, AppInsight, AppMedia, AppMediaInsight, AppMetric, AppStory, DateRange, PaginatedMedia } from '@/types/app';
+import type { AppAccount, AppAudience, AppComment, AppInsight, AppMedia, AppMediaInsight, AppMetric, AppStory, DateRange, PaginatedMedia } from '@/types/app';
 import { AppError } from '@/types/errors';
 import { previousRange } from '@/utils/date';
 
@@ -112,6 +112,29 @@ export class MetaInstagramProvider implements InstagramProvider {
       if (sum > 0) metrics.push({ key: 'interactions', value: sum, source: 'api' });
     }
     return { mediaId: id, metrics, source: 'api' };
+  }
+
+  /** GET /instagram/media/:id/comments → { data: [{ id, text, username, timestamp, like_count, reply_count }] } */
+  async getComments(mediaId: string): Promise<AppComment[]> {
+    try {
+      const json = (await httpJson(this.url(`/media/${encodeURIComponent(mediaId)}/comments`), { headers: this.headers() })) as {
+        data?: { id: string; text?: string; username?: string; timestamp?: string; like_count?: number; reply_count?: number }[];
+      };
+      return (json?.data ?? [])
+        .filter((c) => typeof c.id === 'string')
+        .map((c) => ({
+          id: c.id,
+          username: c.username ?? '',
+          avatarUrl: '',
+          text: c.text ?? '',
+          timestamp: c.timestamp ?? new Date().toISOString(),
+          likeCount: c.like_count ?? 0,
+          replyCount: c.reply_count ?? 0,
+        }));
+    } catch {
+      // Comments need the manage_comments permission; without it the sheet simply shows the empty state.
+      return [];
+    }
   }
 
   async getStories(): Promise<AppStory[]> {

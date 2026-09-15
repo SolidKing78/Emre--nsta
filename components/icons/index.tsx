@@ -591,3 +591,58 @@ export function GearIcon({ size, color = '#000', strokeWidth = 2 }: IconProps) {
     </Svg>
   );
 }
+
+/** Instagram's repost / reshare icon (two arrows chasing each other). */
+export function RepostIcon({ size, color = '#000', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Path d="M17 2.5l3.5 3.5-3.5 3.5" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} />
+      <Path d="M20.5 6H9a4 4 0 0 0-4 4v1.5" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} />
+      <Path d="M7 21.5L3.5 18 7 14.5" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} />
+      <Path d="M3.5 18H15a4 4 0 0 0 4-4v-1.5" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
+/** Muted speaker shown on feed videos. */
+export function MuteIcon({ size, color = '#fff', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Path d="M4 9.5v5h3.2L12 18.5v-13L7.2 9.5H4z" fill={color} stroke={color} strokeLinejoin="round" strokeWidth={strokeWidth} />
+      <Line x1="15.5" y1="9.5" x2="20.5" y2="14.5" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+      <Line x1="20.5" y1="9.5" x2="15.5" y2="14.5" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
+/** Post "more" control as drawn in the current Instagram feed (two short lines). */
+export function MoreLinesIcon({ size, color = '#000', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Line x1="4" y1="9.5" x2="20" y2="9.5" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+      <Line x1="9" y1="14.5" x2="20" y2="14.5" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
+/** Sticker / emoji picker icon in the comment composer. */
+export function StickerIcon({ size, color = '#000', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Path d="M12 3a9 9 0 1 0 9 9V12a9 9 0 0 0-9-9z" fill="none" stroke={color} strokeWidth={strokeWidth} />
+      <Path d="M21 12h-4a5 5 0 0 0-5 5v4" fill="none" stroke={color} strokeLinejoin="round" strokeWidth={strokeWidth} />
+      <Circle cx="8.6" cy="10" r="1.2" fill={color} />
+      <Circle cx="14.2" cy="8.4" r="1.2" fill={color} />
+      <Path d="M8 14.5c.9 1.2 2.3 1.9 3.8 1.9" fill="none" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
+/** Music note used on the "♫ artist · song" line under a username. */
+export function MusicNoteIcon({ size, color = '#000' }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Path d="M9 18.5a3 3 0 1 1-2-2.83V5.2l12-2.4v12.7a3 3 0 1 1-2-2.83V6.3L9 7.7v10.8z" fill={color} />
+    </Svg>
+  );
+}

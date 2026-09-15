@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type UseQueryOptions,
 } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { CACHE_TIMES } from '@/constants/config';
 import { getInstagramProvider, invalidateProvider } from '@/services/instagram/providerFactory';
@@ -39,6 +39,26 @@ export function useAccountKey(): string {
 function useProvider() {
   const session = useSession();
   return useMemo(() => (session ? getInstagramProvider(session) : null), [session]);
+}
+
+/**
+ * Re-renders account / media queries when the provider refines data in the
+ * background (public profiles swap estimated counts for the real ones a few
+ * seconds after the first paint). Mount once near the root.
+ */
+export function useProviderRefinements(): void {
+  const provider = useProvider();
+  const accountKey = useAccountKey();
+  const client = useQueryClient();
+  useEffect(() => {
+    if (!provider?.subscribe) return undefined;
+    return provider.subscribe(() => {
+      void client.invalidateQueries({ queryKey: queryKeys.media(accountKey) });
+      void client.invalidateQueries({ queryKey: queryKeys.account(accountKey) });
+      void client.invalidateQueries({ queryKey: ['mediaInsights', accountKey] });
+      void client.invalidateQueries({ queryKey: ['insights', accountKey] });
+    });
+  }, [provider, accountKey, client]);
 }
 
 /** Live sessions whose token died must bounce to the reconnect screen. */

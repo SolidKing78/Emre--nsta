@@ -32,4 +32,6 @@ export interface InstagramProvider {
   getAudience?(): Promise<AppAudience>;
   /** Discard any cached data so the next call hits the source again. */
   invalidate?(): Promise<void>;
+  /** Fires when the provider refined data in the background (e.g. real counts replacing estimates). */
+  subscribe?(listener: () => void): () => void;
 }

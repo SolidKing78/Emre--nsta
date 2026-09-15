@@ -6,6 +6,9 @@ import type {
   PublicWebUser,
 } from '@/schemas/instagram';
 import type { AccountType, AppAccount, AppMedia, AppMediaChild, AppMetric, DataSource, MediaType, MetricKey } from '@/types/app';
+import { createRng } from '@/utils/random';
+
+import { shortcodeFromMediaId, timestampFromMediaId, type ParsedEmbed, type ParsedProfilePage, type ParsedPublicUser, type ParsedTimelineNode } from './publicWebParser';
 
 /* ------------------------------------------------------------------ */
 /* Meta Graph API → App types                                           */
@@ -133,8 +136,9 @@ function publicMediaType(node: PublicWebMediaNode): MediaType {
   return node.display_url ? 'IMAGE' : 'UNKNOWN';
 }
 
-export function normalizePublicMedia(node: PublicWebMediaNode, username: string, avatarUrl?: string): AppMedia {
+export function normalizePublicMedia(node: PublicWebMediaNode, username: string, avatarUrl?: string, followers = 0): AppMedia {
   const type = publicMediaType(node);
+  const estimated = node.counts_estimated ? estimatePublicCounts(node.id, type, followers) : undefined;
   const image = node.display_url ?? node.thumbnail_src ?? '';
   const children: AppMediaChild[] | undefined = node.edge_sidecar_to_children?.edges.map((edge) => ({
     id: edge.node.id,
@@ -142,8 +146,8 @@ export function normalizePublicMedia(node: PublicWebMediaNode, username: string,
     mediaUrl: edge.node.display_url ?? image,
     thumbnailUrl: edge.node.display_url ?? image,
   }));
-  const likes = node.edge_liked_by?.count ?? node.edge_media_preview_like?.count ?? 0;
-  const viewCount = node.video_play_count ?? node.video_view_count;
+  const likes = estimated?.likeCount ?? node.edge_liked_by?.count ?? node.edge_media_preview_like?.count ?? 0;
+  const viewCount = node.video_play_count ?? node.video_view_count ?? estimated?.viewCount;
   return {
     id: node.id,
     type,
@@ -153,8 +157,11 @@ export function normalizePublicMedia(node: PublicWebMediaNode, username: string,
     caption: node.edge_media_to_caption?.edges[0]?.node.text ?? '',
     timestamp: new Date(node.taken_at_timestamp * 1000).toISOString(),
     likeCount: Math.max(0, likes),
-    commentCount: node.edge_media_to_comment?.count ?? 0,
+    commentCount: estimated?.commentCount ?? node.edge_media_to_comment?.count ?? 0,
     viewCount: viewCount ?? undefined,
+    videoUrl: node.video_url,
+    durationSec: node.video_duration,
+    countsEstimated: node.counts_estimated || undefined,
     children,
     username,
     ownerAvatarUrl: avatarUrl,
@@ -189,8 +196,114 @@ export function normalizePublicAccount(user: PublicWebUser): AppAccount {
 export function normalizePublicProfile(user: PublicWebUser): { account: AppAccount; media: AppMedia[]; nextCursor?: string } {
   const account = normalizePublicAccount(user);
   const edges = user.edge_owner_to_timeline_media?.edges ?? [];
-  const media = edges.map((edge) => normalizePublicMedia(edge.node, account.username, account.profilePictureUrl));
+  const media = edges.map((edge) => normalizePublicMedia(edge.node, account.username, account.profilePictureUrl, account.followersCount));
   const pageInfo = user.edge_owner_to_timeline_media?.page_info;
   const nextCursor = pageInfo?.has_next_page && pageInfo.end_cursor ? pageInfo.end_cursor : undefined;
   return { account, media, nextCursor };
+}
+
+/* ------------------------------------------------------------------ */
+/* Instagram public web PAGES (HTML) → App types                         */
+/* ------------------------------------------------------------------ */
+
+export function normalizeParsedAccount(user: ParsedPublicUser): AppAccount {
+  return {
+    id: user.pk,
+    username: user.username,
+    name: user.fullName || user.username,
+    biography: user.biography,
+    website: user.externalUrl || undefined,
+    profilePictureUrl: user.profilePicUrl,
+    accountType: user.category ? 'CREATOR' : 'PERSONAL',
+    category: user.category,
+    followersCount: user.followerCount,
+    followsCount: user.followingCount,
+    mediaCount: user.mediaCount ?? 0,
+    isVerified: user.isVerified,
+    isPrivate: user.isPrivate,
+    source: 'public',
+    lastSyncAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Deterministic like / comment / view estimates for a post whose numbers the
+ * source did not expose. Engagement rate shrinks as the audience grows, the way
+ * it does on Instagram; the per-post jitter is seeded by the post id so the
+ * figures never jump between renders.
+ */
+export function estimatePublicCounts(pk: string, kind: MediaType, followers: number): { likeCount: number; commentCount: number; viewCount?: number } {
+  const rng = createRng(`public-counts-${pk}`);
+  const isVideo = kind === 'REEL' || kind === 'VIDEO';
+  // ~9% at 1K followers, ~1.4% at 100K, ~0.6% at 1M, ~0.06% at 250M — matches what public accounts actually get.
+  const baseRate = followers < 1_000 ? 0.1 : 0.09 * Math.pow(followers / 1_000, -0.4);
+  const jitter = 0.55 + rng() * 1.1;
+  const likeCount = Math.max(0, Math.round(Math.max(followers, 40) * baseRate * (isVideo ? 1.3 : kind === 'CAROUSEL_ALBUM' ? 1.1 : 1) * jitter));
+  const commentCount = Math.round(likeCount * (0.006 + rng() * 0.014));
+  const viewCount = isVideo ? Math.round(likeCount * (14 + rng() * 10)) : undefined;
+  return { likeCount, commentCount, viewCount };
+}
+
+function parsedMediaType(node: ParsedTimelineNode): MediaType {
+  if (node.kind === 'carousel') return 'CAROUSEL_ALBUM';
+  if (node.kind === 'video') return node.productType.toLowerCase() === 'clips' ? 'REEL' : 'VIDEO';
+  return 'IMAGE';
+}
+
+export function normalizeParsedMedia(node: ParsedTimelineNode, account: AppAccount): AppMedia {
+  const type = parsedMediaType(node);
+  const code = node.code || shortcodeFromMediaId(node.pk);
+  const takenAtMs = node.takenAt !== undefined ? node.takenAt * 1000 : timestampFromMediaId(node.pk);
+  const hasCounts = node.likeCount !== undefined;
+  const estimated = hasCounts ? undefined : estimatePublicCounts(node.pk, type, account.followersCount);
+  return {
+    id: node.pk,
+    type,
+    permalink: code ? `https://www.instagram.com/${type === 'REEL' ? 'reel' : 'p'}/${code}/` : '',
+    mediaUrl: node.imageUrl,
+    thumbnailUrl: node.imageUrl,
+    caption: node.caption,
+    timestamp: new Date(takenAtMs ?? Date.now()).toISOString(),
+    likeCount: node.likeCount ?? estimated?.likeCount ?? 0,
+    commentCount: node.commentCount ?? estimated?.commentCount ?? 0,
+    viewCount: node.viewCount ?? estimated?.viewCount,
+    username: account.username,
+    ownerAvatarUrl: account.profilePictureUrl,
+    aspectRatio: node.width && node.height ? node.width / node.height : undefined,
+    isPinned: node.isPinned,
+    countsEstimated: !hasCounts,
+    source: 'public',
+  };
+}
+
+export function normalizeParsedProfile(page: Extract<ParsedProfilePage, { status: 'ok' }>): { account: AppAccount; media: AppMedia[]; nextCursor?: string } {
+  const account = normalizeParsedAccount(page.user);
+  const media = page.media.map((node) => normalizeParsedMedia(node, account));
+  if (!page.user.mediaCount && media.length > 0) account.mediaCount = media.length;
+  return { account, media, nextCursor: page.endCursor };
+}
+
+/** Merges the real numbers (and video details) from an embed page into a post. */
+export function applyEmbedDetails(media: AppMedia, embed: ParsedEmbed): AppMedia {
+  const children: AppMediaChild[] | undefined = embed.children?.map((child) => ({
+    id: child.id,
+    type: child.isVideo ? 'VIDEO' : 'IMAGE',
+    mediaUrl: child.displayUrl ?? media.mediaUrl,
+    thumbnailUrl: child.displayUrl ?? media.thumbnailUrl,
+  }));
+  const isVideo = media.type === 'REEL' || media.type === 'VIDEO';
+  return {
+    ...media,
+    likeCount: embed.likeCount ?? media.likeCount,
+    commentCount: embed.commentCount ?? media.commentCount,
+    viewCount: isVideo ? (embed.viewCount ?? media.viewCount) : media.viewCount,
+    caption: media.caption || embed.caption || '',
+    timestamp: embed.takenAt !== undefined ? new Date(embed.takenAt * 1000).toISOString() : media.timestamp,
+    aspectRatio: embed.width && embed.height ? embed.width / embed.height : media.aspectRatio,
+    children: children && children.length > 0 ? children : media.children,
+    videoUrl: embed.videoUrl ?? media.videoUrl,
+    durationSec: embed.videoDuration ?? media.durationSec,
+    music: embed.music ?? media.music,
+    countsEstimated: embed.likeCount === undefined && embed.commentCount === undefined,
+  };
 }

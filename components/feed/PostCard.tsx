@@ -8,7 +8,7 @@ import { Avatar } from '@/components/common/Avatar';
 import { IconButton } from '@/components/common/IconButton';
 import { Chip } from '@/components/common/Primitives';
 import { Text } from '@/components/common/Text';
-import { BookmarkIcon, CommentIcon, HeartIcon, MoreIcon, PlayIcon, ShareIcon, VerifiedIcon } from '@/components/icons';
+import { BookmarkIcon, CommentIcon, HeartIcon, MoreLinesIcon, MusicNoteIcon, MuteIcon, RepostIcon, ShareIcon, VerifiedIcon } from '@/components/icons';
 import { spacing } from '@/constants/theme';
 import { useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { triggerHaptic } from '@/hooks/useHaptics';
@@ -16,7 +16,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
 import type { AppMedia } from '@/types/app';
 import { formatPostDate } from '@/utils/date';
-import { formatCompact, formatNumber } from '@/utils/format';
+import { formatCompact } from '@/utils/format';
 
 interface PostCardProps {
   media: AppMedia;
@@ -26,6 +26,10 @@ interface PostCardProps {
   onPress?: (media: AppMedia) => void;
   onPressMore?: (media: AppMedia) => void;
   onPressInsights?: (media: AppMedia) => void;
+  /** Opens the comments sheet. Falls back to `onPress`. */
+  onPressComments?: (media: AppMedia) => void;
+  /** Shows Instagram's "Takip Et" pill next to the username (accounts you do not own). */
+  showFollow?: boolean;
   /** Full caption (detail screen) instead of 2-line truncation. */
   expanded?: boolean;
   /** Extra share count shown next to the share icon when the source knows it. */
@@ -48,6 +52,8 @@ export const PostCard = memo(function PostCard({
   onPress,
   onPressMore,
   onPressInsights,
+  onPressComments,
+  showFollow = false,
   expanded = false,
   shareCount,
   simulated,
@@ -136,8 +142,9 @@ export const PostCard = memo(function PostCard({
   };
 
   const likeCount = media.likeCount + (liked ? 1 : 0);
+  const reposts = shareCount ?? media.shareCount;
   const caption = media.caption.trim();
-  const captionLines = expanded || captionOpen ? undefined : 2;
+  const captionTruncated = !expanded && !captionOpen && caption.length > 40;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -153,19 +160,31 @@ export const PostCard = memo(function PostCard({
               {verified ? <VerifiedIcon size={12} /> : null}
               {indicators && (media.isSimulated || simulated) ? <Chip label={t('sim.badge')} tone="simulation" small style={{ marginLeft: spacing.xs }} /> : null}
             </View>
-            {media.location ? (
-              <Text variant="small" numberOfLines={1} style={{ fontSize: 12 }}>
+            {media.music ? (
+              <View style={styles.musicRow}>
+                <MusicNoteIcon size={12} color={colors.text} />
+                <Text variant="small" numberOfLines={1} style={styles.subline}>
+                  {media.music}
+                </Text>
+              </View>
+            ) : media.location ? (
+              <Text variant="small" numberOfLines={1} style={styles.subline}>
                 {media.location}
               </Text>
             ) : media.type === 'REEL' ? (
-              <Text variant="small" color="secondary" numberOfLines={1} style={{ fontSize: 12 }}>
+              <Text variant="small" color="secondary" numberOfLines={1} style={styles.subline}>
                 {t('feed.reel')}
               </Text>
             ) : null}
           </View>
         </Pressable>
+        {showFollow ? (
+          <Pressable style={[styles.follow, { borderColor: colors.borderStrong }]} accessibilityRole="button" accessibilityLabel={t('feed.follow')}>
+            <Text variant="feedStrong">{t('feed.follow')}</Text>
+          </Pressable>
+        ) : null}
         <IconButton accessibilityLabel="more" onPress={() => onPressMore?.(media)} size={36}>
-          <MoreIcon color={colors.text} size={22} />
+          <MoreLinesIcon color={colors.text} size={24} />
         </IconButton>
       </View>
 
@@ -216,8 +235,8 @@ export const PostCard = memo(function PostCard({
             </View>
           ) : null}
           {isVideo ? (
-            <View style={styles.playBadge} pointerEvents="none">
-              <PlayIcon size={22} color="#fff" />
+            <View style={styles.muteBadge} pointerEvents="none">
+              <MuteIcon size={16} color="#fff" />
             </View>
           ) : null}
           <Animated.View style={[styles.bigHeart, bigHeartStyle]} pointerEvents="none">
@@ -237,19 +256,22 @@ export const PostCard = memo(function PostCard({
               {formatCompact(likeCount, language)}
             </Text>
           </Pressable>
-          <Pressable onPress={() => onPress?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('metric.comments')} style={styles.actionItem}>
+          <Pressable onPress={() => (onPressComments ?? onPress)?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('metric.comments')} style={styles.actionItem}>
             <CommentIcon color={colors.text} size={24} />
             <Text variant="feedStrong" style={styles.actionCount}>
               {formatCompact(media.commentCount, language)}
             </Text>
           </Pressable>
-          <Pressable onPress={() => onPressInsights?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('common.share')} style={styles.actionItem}>
-            <ShareIcon color={colors.text} size={24} />
-            {shareCount !== undefined ? (
+          <Pressable onPress={() => onPressInsights?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('metric.shares')} style={styles.actionItem}>
+            <RepostIcon color={colors.text} size={24} />
+            {reposts !== undefined ? (
               <Text variant="feedStrong" style={styles.actionCount}>
-                {formatCompact(shareCount, language)}
+                {formatCompact(reposts, language)}
               </Text>
             ) : null}
+          </Pressable>
+          <Pressable onPress={() => onPressInsights?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('common.share')} style={styles.actionItem}>
+            <ShareIcon color={colors.text} size={24} />
           </Pressable>
         </View>
         {slides.length > 1 ? (
@@ -274,28 +296,16 @@ export const PostCard = memo(function PostCard({
 
       {/* Likes / views line */}
       <View style={styles.meta}>
-        {isVideo && media.viewCount !== undefined ? (
-          <Text variant="feedStrong">{t('feed.views', { n: formatNumber(media.viewCount, language) })}</Text>
-        ) : (
-          <Text variant="feedStrong">{likeCount === 1 ? t('feed.likesOne') : t('feed.likes', { n: formatNumber(likeCount, language) })}</Text>
-        )}
         {caption ? (
           <Pressable onPress={() => (expanded ? undefined : setCaptionOpen((v) => !v))} accessibilityRole="text">
-            <Text variant="feed" numberOfLines={captionLines} style={styles.caption}>
+            <Text variant="feed" numberOfLines={captionTruncated ? 1 : undefined} style={styles.caption}>
               <Text variant="feedStrong">{media.username} </Text>
-              {caption}
-            </Text>
-            {!expanded && !captionOpen && caption.length > 90 ? (
-              <Text variant="feed" color="secondary">
-                {t('feed.captionMore')}
-              </Text>
-            ) : null}
-          </Pressable>
-        ) : null}
-        {media.commentCount > 0 && !expanded ? (
-          <Pressable onPress={() => onPress?.(media)} accessibilityRole="button" accessibilityLabel={t('media.comments')}>
-            <Text variant="feed" color="secondary" style={styles.comments}>
-              {media.commentCount === 1 ? t('feed.viewOneComment') : t('feed.viewAllComments', { n: formatNumber(media.commentCount, language) })}
+              {captionTruncated ? caption.slice(0, 40).trimEnd() + '… ' : caption}
+              {captionTruncated ? (
+                <Text variant="feed" color="secondary">
+                  {t('feed.more')}
+                </Text>
+              ) : null}
             </Text>
           </Pressable>
         ) : null}
@@ -313,18 +323,20 @@ const styles = StyleSheet.create({
   headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   headerText: { marginLeft: spacing.sm + 2, flex: 1 },
   usernameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  musicRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
+  subline: { fontSize: 12, flexShrink: 1 },
+  follow: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6, marginRight: 4 },
   counter: { position: 'absolute', top: spacing.md, right: spacing.md, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
   counterText: { color: '#fff', fontWeight: '600', fontSize: 12 },
-  playBadge: { position: 'absolute', top: spacing.md, right: spacing.md },
+  muteBadge: { position: 'absolute', bottom: spacing.md, right: spacing.md, width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
   bigHeart: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingTop: spacing.sm + 2, paddingBottom: spacing.xs },
-  actionsLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: spacing.lg },
+  actionsLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: spacing.lg - 2 },
   actionItem: { flexDirection: 'row', alignItems: 'center' },
   actionCount: { marginLeft: 6 },
   dots: { position: 'absolute', left: 0, right: 0, top: spacing.sm + 8, flexDirection: 'row', justifyContent: 'center', gap: 4 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   meta: { paddingHorizontal: spacing.md, paddingTop: 2 },
-  caption: { marginTop: 4 },
-  comments: { marginTop: 4 },
+  caption: { marginTop: 2 },
   date: { marginTop: 4, fontSize: 12 },
 });
