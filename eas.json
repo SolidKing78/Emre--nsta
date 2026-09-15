@@ -1,17 +1,37 @@
 {
-  "cli": { "version": ">= 12.0.0" },
+  "cli": {
+    "version": ">= 12.0.0"
+  },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_APP_MODE": "live" }
+      "env": {
+        "EXPO_PUBLIC_APP_MODE": "live"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_APP_MODE": "live" }
+      "env": {
+        "EXPO_PUBLIC_APP_MODE": "live"
+      },
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
-      "env": { "EXPO_PUBLIC_APP_MODE": "live" }
+      "env": {
+        "EXPO_PUBLIC_APP_MODE": "live"
+      }
+    },
+    "apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_MODE": "demo"
+      }
     }
   }
 }
