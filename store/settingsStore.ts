@@ -1,9 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getLocales } from 'expo-localization';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { GrowthPreset } from '@/types/simulation';
+import { GROWTH_PRESETS, type GrowthPreset } from '@/types/simulation';
+
+import { durableStorage, hydrationHandler, isRecord, oneOf } from './persistence';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type Language = 'tr' | 'en';
@@ -36,6 +37,13 @@ function detectLanguage(): Language {
   }
 }
 
+const THEMES: readonly ThemePreference[] = ['system', 'light', 'dark'];
+const LANGUAGES: readonly Language[] = ['tr', 'en'];
+const FORMULAS: readonly EngagementFormula[] = ['reach', 'followers'];
+const PRESET_LABELS = GROWTH_PRESETS.map((p) => p.label);
+
+const hydration = hydrationHandler<SettingsState>();
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -56,7 +64,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'sociallens.settings.v1',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => durableStorage),
       partialize: (state) => ({
         theme: state.theme,
         language: state.language,
@@ -65,9 +73,21 @@ export const useSettingsStore = create<SettingsState>()(
         haptics: state.haptics,
         showSimulationBadge: state.showSimulationBadge,
       }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHydrated(true);
+      // Every persisted value is checked against its allowed set; anything else keeps the default.
+      merge: (persisted, current) => {
+        const saved = isRecord(persisted) ? persisted : {};
+        return {
+          ...current,
+          theme: oneOf(saved.theme, THEMES, current.theme),
+          language: oneOf(saved.language, LANGUAGES, current.language),
+          engagementFormula: oneOf(saved.engagementFormula, FORMULAS, current.engagementFormula),
+          defaultGrowthPreset: oneOf(saved.defaultGrowthPreset, PRESET_LABELS, current.defaultGrowthPreset),
+          haptics: typeof saved.haptics === 'boolean' ? saved.haptics : current.haptics,
+          showSimulationBadge: typeof saved.showSimulationBadge === 'boolean' ? saved.showSimulationBadge : current.showSimulationBadge,
+        };
       },
+      onRehydrateStorage: hydration.onRehydrateStorage,
     },
   ),
 );
+hydration.attach(useSettingsStore);

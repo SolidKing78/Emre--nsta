@@ -151,6 +151,8 @@ export const touch = {
   minTarget: 44,
   tabBarHeight: 50,
   headerHeight: 44,
+  /** Long-press that opens a scenario editor — long enough that a tap or a scroll never triggers it. */
+  longPressMs: 650,
 } as const;
 
 export const hitSlop = { top: 8, bottom: 8, left: 8, right: 8 } as const;

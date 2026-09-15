@@ -7,6 +7,7 @@ import React, { useEffect, useMemo } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppErrorBoundary } from '@/components/common/AppErrorBoundary';
 import { MetricEditorProvider } from '@/components/simulation/SimulationMetricEditor';
 import { useProviderRefinements } from '@/features/instagram/hooks';
 import { useTheme } from '@/hooks/useTheme';
@@ -133,7 +134,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
-          <Navigation />
+          <AppErrorBoundary>
+            <Navigation />
+          </AppErrorBoundary>
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

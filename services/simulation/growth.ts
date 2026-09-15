@@ -28,6 +28,7 @@ export const GROWTH_ELASTICITY: Record<MetricKey, number> = {
   avg_watch_time: 0.15,
   replays: 1,
   follows_from_post: 1.2,
+  reposts: 1.05,
 };
 
 export const GROWTH_MIN = -90;
@@ -36,7 +37,7 @@ export const GROWTH_MAX = 1000;
 export const GROWTH_RATE_PRESETS: readonly number[] = [10, 25, 50, 100, 200, 500];
 
 /** Deterministic deviation in [-0.04, 0.04], scaled down for small growth rates. */
-function deviation(seed: string, percent: number): number {
+export function deviation(seed: string, percent: number): number {
   const unit = (hashString(seed) % 10_000) / 10_000; // 0..1
   const strength = Math.min(1, Math.abs(percent) / 25);
   return (unit - 0.5) * 0.08 * strength;

@@ -1,5 +1,6 @@
 import type { MetricKey } from '@/types/app';
 
+import { applyBoost } from './boost';
 import { applyGrowth } from './growth';
 
 /**
@@ -7,6 +8,8 @@ import { applyGrowth } from './growth';
  *
  *   simulationMode === false → displayValue = realValue
  *   simulationMode === true  → displayValue = overrideValue            (explicit edit wins)
+ *                                           ?? realValue × boost       ("Etkileşimi artır": the dial that names this
+ *                                                                        metric, or the change the other dials induce)
  *                                           ?? realValue × growth      (scenario growth rate)
  *                                           ?? realValue
  *
@@ -25,6 +28,8 @@ export interface GrowthContext {
   metric: MetricKey;
   /** Stable seed for per-post deviation (omit for account-level metrics). */
   seed?: string;
+  /** Effective "Etkileşimi artır" percentage for this metric; replaces the growth rate when set. */
+  boostPercent?: number;
 }
 
 export function resolveMetric(
@@ -38,6 +43,10 @@ export function resolveMetric(
   }
   if (overrideValue !== undefined && Number.isFinite(overrideValue)) {
     return { realValue, overrideValue, displayValue: overrideValue, isSimulated: overrideValue !== realValue };
+  }
+  if (growth && growth.boostPercent !== undefined && growth.boostPercent !== 0) {
+    const boosted = applyBoost(realValue, growth.boostPercent, growth.seed, growth.metric);
+    return { realValue, overrideValue, displayValue: boosted, isSimulated: boosted !== realValue };
   }
   if (growth && growth.percent !== 0) {
     const grown = applyGrowth(realValue, growth.metric, growth.percent, growth.seed);

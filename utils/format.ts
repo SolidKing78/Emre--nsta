@@ -92,6 +92,17 @@ export function formatDuration(seconds: number): string {
   return `${m}:${r.toString().padStart(2, '0')}`;
 }
 
+/** Instagram's watch-time style: "30sn" / "1dk 05sn" (tr), "30s" / "1m 05s" (en). */
+export function formatWatchTime(seconds: number, locale: NumberLocale = 'en'): string {
+  const s = Math.max(0, Math.round(seconds));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  const sec = locale === 'tr' ? 'sn' : 's';
+  const min = locale === 'tr' ? 'dk' : 'm';
+  if (m === 0) return `${r}${sec}`;
+  return `${m}${min} ${r.toString().padStart(2, '0')}${sec}`;
+}
+
 export function safeDivide(a: number, b: number): number {
   return b === 0 ? 0 : a / b;
 }

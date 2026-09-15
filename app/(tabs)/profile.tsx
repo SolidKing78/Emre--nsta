@@ -1,3 +1,4 @@
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
@@ -8,11 +9,12 @@ import { Screen } from '@/components/common/Screen';
 import { Skeleton } from '@/components/common/Skeleton';
 import { EmptyState, ErrorState } from '@/components/common/States';
 import { Text } from '@/components/common/Text';
-import { ChevronDownIcon, LockIcon, MenuIcon, PlusSquareIcon, ReelsIcon, TaggedIcon } from '@/components/icons';
+import { ChevronDownIcon, LockIcon, MenuIcon, PlusSquareIcon, ReelsIcon, TaggedIcon, ThreadsIcon } from '@/components/icons';
 import { HighlightsRow } from '@/components/profile/HighlightsRow';
 import { chunkRows, useGridRowRenderer } from '@/components/profile/MediaGrid';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { ProfileTabs, type ProfileTab } from '@/components/profile/ProfileTabs';
+import { EngagementBoostSheet } from '@/components/simulation/EngagementBoostEditor';
 import { SimulationBadge } from '@/components/simulation/SimulationBadge';
 import { spacing } from '@/constants/theme';
 import { useContentPerformance } from '@/features/analytics/useContentPerformance';
@@ -20,6 +22,7 @@ import { flattenMedia, useAccount, useAccountInsights, useHighlights, useMediaFe
 import { ACCOUNT_SCOPE, useDisplayMetrics, useEffectiveAccount, useEffectiveMedia, useSimulationEnabled, useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
 import { useT } from '@/i18n';
+import { MOCK_NOTE } from '@/mocks/mockData';
 import type { AppMedia } from '@/types/app';
 import { buildDateRange } from '@/utils/date';
 
@@ -30,6 +33,8 @@ export default function ProfileScreen() {
   const t = useT();
   const [tab, setTab] = useState<ProfileTab>('grid');
   const [refreshing, setRefreshing] = useState(false);
+  // Long-press on "Profesyonel pano" → the scenario dials for the whole page (followers, every post's views / likes…).
+  const [boostOpen, setBoostOpen] = useState(false);
   const simulation = useSimulationEnabled();
   const indicators = useSimulationIndicators();
 
@@ -65,6 +70,8 @@ export default function ProfileScreen() {
   }, [refreshAll]);
 
   const hasStory = Boolean(stories?.some((s) => s.isSelf && !s.seen)) && account?.source === 'demo';
+  // Someone else's public profile is shown as Instagram shows it to a visitor; everything else is "your" profile.
+  const own = account?.source !== 'public';
 
   const listHeader = (
     <View>
@@ -74,7 +81,10 @@ export default function ProfileScreen() {
           realAccount={account}
           viewsLast30={viewsLast30}
           hasStory={hasStory}
+          own={own}
+          note={account.source === 'demo' ? MOCK_NOTE : undefined}
           onPressDashboard={() => router.push('/dashboard')}
+          onLongPressDashboard={() => setBoostOpen(true)}
           onPressShare={() => router.push('/share')}
           onPressEditProfile={() => router.push('/simulation/profile')}
         />
@@ -145,6 +155,11 @@ export default function ProfileScreen() {
         right={
           <>
             {indicators ? <SimulationBadge style={{ marginRight: spacing.xs }} /> : null}
+            {own && effectiveAccount ? (
+              <IconButton accessibilityLabel={t('profile.threads')} onPress={() => void Linking.openURL(`https://www.threads.net/@${effectiveAccount.username}`)}>
+                <ThreadsIcon color={colors.text} size={26} />
+              </IconButton>
+            ) : null}
             <IconButton accessibilityLabel={t('settings.title')} onPress={() => router.push('/settings')}>
               <MenuIcon color={colors.text} size={26} />
             </IconButton>
@@ -180,6 +195,7 @@ export default function ProfileScreen() {
           removeClippedSubviews
         />
       )}
+      <EngagementBoostSheet visible={boostOpen} onClose={() => setBoostOpen(false)} />
     </Screen>
   );
 }

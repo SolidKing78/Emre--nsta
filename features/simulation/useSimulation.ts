@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { useAccountKey, useSession } from '@/features/instagram/hooks';
+import { boostPercentFor } from '@/services/simulation/boost';
 import { resolveMetric, type ResolvedMetric } from '@/services/simulation/resolve';
 import { useSettingsStore } from '@/store/settingsStore';
 import {
@@ -9,12 +10,15 @@ import {
   EMPTY_PROFILE_OVERRIDES,
   EMPTY_SIMULATED_MEDIA,
   selectActiveProfile,
+  selectBoosts,
   selectGrowthPercent,
   useSimulationStore,
 } from '@/store/simulationStore';
 import type { AppAccount, AppMedia, AppMediaInsight, AppMetric, MetricKey } from '@/types/app';
 import {
   overrideKey,
+  type BoostKey,
+  type BoostMap,
   type OverrideKey,
   type ProfileOverrides,
   type SimulatedMedia,
@@ -61,6 +65,12 @@ export function useGrowthPercent(): number {
   return useSimulationStore((s) => selectGrowthPercent(s, accountKey));
 }
 
+/** "Etkileşimi artır" dials of the active scenario (empty object when none). */
+export function useBoosts(): BoostMap {
+  const accountKey = useAccountKey();
+  return useSimulationStore((s) => selectBoosts(s, accountKey));
+}
+
 export function useActiveScenario(): SimulationProfile | null {
   const accountKey = useAccountKey();
   return useSimulationStore((s) => (s.accounts[accountKey] ? selectActiveProfile(s, accountKey) : null));
@@ -95,6 +105,9 @@ export function useSimulationActions() {
       clearOverride: (scope: SimulationScope, metric: MetricKey) => store.getState().clearOverride(accountKey, scope, metric),
       resetAll: () => store.getState().resetAll(accountKey),
       setGrowthPercent: (percent: number) => store.getState().setGrowthPercent(accountKey, percent),
+      setBoost: (key: BoostKey, percent: number) => store.getState().setBoost(accountKey, key, percent),
+      setBoosts: (boosts: BoostMap) => store.getState().setBoosts(accountKey, boosts),
+      clearBoosts: () => store.getState().clearBoosts(accountKey),
       applyFactor: (entries: { scope: SimulationScope; metric: MetricKey; realValue: number }[], factor: number) =>
         store
           .getState()
@@ -130,11 +143,13 @@ export function resolveWithGrowth(
   overrides: Record<OverrideKey, number>,
   enabled: boolean,
   growthPercent: number,
+  boosts?: BoostMap,
 ): ResolvedMetric {
   return resolveMetric(realValue, overrides[overrideKey(scope, metric)], enabled, {
     percent: growthPercent,
     metric,
     seed: growthSeed(scope, metric),
+    boostPercent: boostPercentFor(boosts, scope, metric, growthPercent),
   });
 }
 
@@ -142,9 +157,10 @@ export function useDisplayValue(scope: SimulationScope, metric: MetricKey, realV
   const enabled = useSimulationEnabled();
   const overrides = useOverrides();
   const growth = useGrowthPercent();
+  const boosts = useBoosts();
   return useMemo(
-    () => resolveWithGrowth(scope, metric, realValue, overrides, enabled, growth),
-    [enabled, overrides, growth, scope, metric, realValue],
+    () => resolveWithGrowth(scope, metric, realValue, overrides, enabled, growth, boosts),
+    [enabled, overrides, growth, boosts, scope, metric, realValue],
   );
 }
 
@@ -158,10 +174,11 @@ export function useDisplayMetrics(scope: SimulationScope, metrics: readonly AppM
   const enabled = useSimulationEnabled();
   const overrides = useOverrides();
   const growth = useGrowthPercent();
+  const boosts = useBoosts();
   return useMemo(() => {
     if (!metrics) return [];
     return metrics.map((metric) => {
-      const resolved = resolveWithGrowth(scope, metric.key, metric.value, overrides, enabled, growth);
+      const resolved = resolveWithGrowth(scope, metric.key, metric.value, overrides, enabled, growth, boosts);
       const ratio = metric.value > 0 ? resolved.displayValue / metric.value : 1;
       const series =
         resolved.isSimulated && metric.series
@@ -176,7 +193,7 @@ export function useDisplayMetrics(scope: SimulationScope, metrics: readonly AppM
         source: resolved.isSimulated ? ('manual' as const) : metric.source,
       };
     });
-  }, [metrics, overrides, enabled, growth, scope]);
+  }, [metrics, overrides, enabled, growth, boosts, scope]);
 }
 
 /** Account with profile edits + count overrides / growth applied (only while simulation is on). */
@@ -184,10 +201,11 @@ export function useEffectiveAccount(account: AppAccount | undefined): AppAccount
   const enabled = useSimulationEnabled();
   const overrides = useOverrides();
   const growth = useGrowthPercent();
+  const boosts = useBoosts();
   const profile = useProfileOverrides();
   return useMemo(() => {
     if (!account || !enabled) return account;
-    const pick = (metric: MetricKey, real: number) => resolveWithGrowth(ACCOUNT_SCOPE, metric, real, overrides, true, growth).displayValue;
+    const pick = (metric: MetricKey, real: number) => resolveWithGrowth(ACCOUNT_SCOPE, metric, real, overrides, true, growth, boosts).displayValue;
     return {
       ...account,
       name: profile.name ?? account.name,
@@ -200,7 +218,7 @@ export function useEffectiveAccount(account: AppAccount | undefined): AppAccount
       followsCount: pick('following', account.followsCount),
       mediaCount: pick('media_count', account.mediaCount),
     };
-  }, [account, enabled, overrides, growth, profile]);
+  }, [account, enabled, overrides, growth, boosts, profile]);
 }
 
 export function simulatedToAppMedia(item: SimulatedMedia, username: string, avatar?: string): AppMedia {
@@ -251,15 +269,16 @@ export function useEffectiveMedia(media: AppMedia[], account?: AppAccount): AppM
   const enabled = useSimulationEnabled();
   const overrides = useOverrides();
   const growth = useGrowthPercent();
+  const boosts = useBoosts();
   const simulated = useSimulatedMedia();
   const session = useSession();
   return useMemo(() => {
     if (!enabled) return media;
-    const applied = media.map((item) => {
+    const apply = (item: AppMedia): AppMedia => {
       const scope = mediaScope(item.id);
-      const likes = resolveWithGrowth(scope, 'likes', item.likeCount, overrides, true, growth);
-      const comments = resolveWithGrowth(scope, 'comments', item.commentCount, overrides, true, growth);
-      const views = item.viewCount !== undefined ? resolveWithGrowth(scope, 'views', item.viewCount, overrides, true, growth) : undefined;
+      const likes = resolveWithGrowth(scope, 'likes', item.likeCount, overrides, true, growth, boosts);
+      const comments = resolveWithGrowth(scope, 'comments', item.commentCount, overrides, true, growth, boosts);
+      const views = item.viewCount !== undefined ? resolveWithGrowth(scope, 'views', item.viewCount, overrides, true, growth, boosts) : undefined;
       if (!likes.isSimulated && !comments.isSimulated && !views?.isSimulated) return item;
       return {
         ...item,
@@ -267,12 +286,14 @@ export function useEffectiveMedia(media: AppMedia[], account?: AppAccount): AppM
         commentCount: comments.displayValue,
         viewCount: views ? views.displayValue : item.viewCount,
       };
-    });
+    };
+    const applied = media.map(apply);
     if (simulated.length === 0) return applied;
+    // Scenario posts follow the dials / growth rate too, so the feed and the insights agree.
     const username = account?.username ?? session?.username ?? '';
-    const extras = simulated.map((s) => simulatedToAppMedia(s, username, account?.profilePictureUrl));
+    const extras = simulated.map((s) => apply(simulatedToAppMedia(s, username, account?.profilePictureUrl)));
     return [...extras, ...applied].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  }, [media, enabled, overrides, growth, simulated, account, session]);
+  }, [media, enabled, overrides, growth, boosts, simulated, account, session]);
 }
 
 /** Convenience for screens that need to know whether a metric is overridden explicitly. */

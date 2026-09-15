@@ -9,7 +9,7 @@ import { ChevronRightIcon, EditIcon } from '@/components/icons';
 import { metricLabelKey, useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
 import { spacing, touch } from '@/constants/theme';
 import type { DisplayMetric } from '@/features/simulation/useSimulation';
-import { useSimulationEnabled, useSimulationIndicators } from '@/features/simulation/useSimulation';
+import { useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
 import type { SimulationScope } from '@/types/simulation';
@@ -33,7 +33,6 @@ export function MetricRow({ metric, scope, subtitle, onPress, last, emphasized, 
   const t = useT();
   const language = useLanguage();
   const editor = useMetricEditor();
-  const simulation = useSimulationEnabled();
   const indicators = useSimulationIndicators();
   const flagged = indicators && metric.isSimulated;
   const change = percentChange(metric.value, metric.previousValue);
@@ -43,9 +42,9 @@ export function MetricRow({ metric, scope, subtitle, onPress, last, emphasized, 
 
   return (
     <PressableScale
-      onPress={onPress ?? (simulation && editable ? openEditor : undefined)}
+      onPress={onPress}
       onLongPress={openEditor}
-      delayLongPress={300}
+      delayLongPress={touch.longPressMs}
       scaleTo={0.995}
       haptic={false}
       accessibilityRole="button"

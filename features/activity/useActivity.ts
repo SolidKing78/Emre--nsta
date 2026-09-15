@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { flattenMedia, useAccount, useAccountInsights, useMediaFeed, useSession } from '@/features/instagram/hooks';
 import { useActiveScenario } from '@/features/simulation/useSimulation';
 import { buildMockActivity } from '@/mocks/mockData';
+import { countBoosts } from '@/services/simulation/boost';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useSimulationStore } from '@/store/simulationStore';
 import type { AppActivityItem } from '@/types/app';
@@ -26,7 +27,12 @@ export function useActivity(): { items: AppActivityItem[]; isLoading: boolean } 
   const items = useMemo<AppActivityItem[]>(() => {
     const out: AppActivityItem[] = [];
     if (!session) return out;
-    if (showScenarioEvents && lastChangedAt && scenario && (Object.keys(scenario.overrides).length > 0 || (scenario.growthPercent ?? 0) !== 0)) {
+    if (
+      showScenarioEvents &&
+      lastChangedAt &&
+      scenario &&
+      (Object.keys(scenario.overrides).length > 0 || (scenario.growthPercent ?? 0) !== 0 || countBoosts(scenario.boosts) > 0)
+    ) {
       out.push({ id: 'sim-change', kind: 'simulation', title: scenario.name, timestamp: lastChangedAt, route: '/simulation' });
     }
     if (session.source === 'demo') {

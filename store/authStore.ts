@@ -4,6 +4,8 @@ import { createJSONStorage, persist, type StateStorage } from 'zustand/middlewar
 
 import type { DataSource } from '@/types/app';
 
+import { hydrationHandler } from './persistence';
+
 /**
  * App session. This is NOT an Instagram token.
  * In live mode `sessionToken` is an opaque token issued by the SocialLens backend,
@@ -59,6 +61,10 @@ const secureStorage: StateStorage = {
   },
 };
 
+const hydration = hydrationHandler<AuthState>((state) => {
+  if (state.status === 'loading') state.signOut();
+});
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
@@ -83,15 +89,11 @@ export const useAuthStore = create<AuthState>()(
         const status: AuthStatus = session ? (saved.status === 'authExpired' ? 'authExpired' : 'signedIn') : 'signedOut';
         return { ...current, session, status };
       },
-      onRehydrateStorage: () => (state) => {
-        state?.setHydrated(true);
-        if (state && state.status === 'loading') {
-          state.signOut();
-        }
-      },
+      onRehydrateStorage: hydration.onRehydrateStorage,
     },
   ),
 );
+hydration.attach(useAuthStore);
 
 export function buildAccountKey(source: DataSource, identifier: string): string {
   return `${source}:${identifier.toLowerCase()}`;

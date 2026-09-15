@@ -6,6 +6,7 @@ import {
   mediaScope,
   simulatedToAppMedia,
   syntheticInsightForSimulated,
+  useBoosts,
   useEffectiveAccount,
   useEffectiveMedia,
   useGrowthPercent,
@@ -27,6 +28,7 @@ export function useMediaDetail(id: string | undefined) {
   const effectiveAccount = useEffectiveAccount(account);
   const overrides = useOverrides();
   const growth = useGrowthPercent();
+  const boosts = useBoosts();
   const enabled = useSimulationEnabled();
 
   const mediaQuery = useMediaById(simulatedItem ? undefined : id);
@@ -42,8 +44,8 @@ export function useMediaDetail(id: string | undefined) {
 
   const realInsight = simulatedItem && realMedia ? syntheticInsightForSimulated(realMedia) : insightsQuery.data;
   const insight = useMemo<AppMediaInsight | undefined>(
-    () => applyMediaOverrides(realInsight, overrides, enabled, growth),
-    [realInsight, overrides, enabled, growth],
+    () => applyMediaOverrides(realInsight, overrides, enabled, growth, boosts),
+    [realInsight, overrides, enabled, growth, boosts],
   );
 
   const isLoading = simulatedItem ? false : mediaQuery.isLoading;

@@ -46,6 +46,7 @@ function item(type: MediaType, overrides: Partial<ContentPerformance> & { hour?:
     comments,
     saves,
     shares,
+    reposts: 0,
     interactions: overrides.interactions ?? likes + comments + saves + shares,
     engagementRate: null,
     available: new Set<MetricKey>(['views', 'reach', 'likes', 'comments', 'saves', 'shares', 'interactions']),

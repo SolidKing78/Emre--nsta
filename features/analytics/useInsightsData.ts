@@ -35,7 +35,7 @@ function interactionValue(item: ContentPerformance, kind: InteractionKind): numb
     case 'comments':
       return item.comments;
     case 'reposts':
-      return Math.round(item.shares * 0.35);
+      return item.reposts;
     case 'shares':
       return item.shares;
     case 'saves':

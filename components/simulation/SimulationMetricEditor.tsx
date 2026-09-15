@@ -17,6 +17,19 @@ import type { MetricKey } from '@/types/app';
 import { GROWTH_PRESETS, overrideKey, type SimulationScope } from '@/types/simulation';
 import { clamp, formatCompact, formatNumber, parseNumericInput } from '@/utils/format';
 
+/** Slider span as a multiple of the real value: 10× fits most edits, 100× / 1000× for big jumps. */
+const RANGE_OPTIONS = [10, 100, 1000] as const;
+type RangeMultiplier = (typeof RANGE_OPTIONS)[number];
+
+/** Rounds up to 1 / 2 / 5 × 10ⁿ so the slider's end label reads as a clean number. */
+function niceCeil(value: number): number {
+  if (value <= 0) return 100;
+  const exp = Math.pow(10, Math.floor(Math.log10(value)));
+  const n = value / exp;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * exp;
+}
+
 /* ------------------------------------------------------------------ */
 /* Context: any screen can open the editor for a metric                 */
 /* ------------------------------------------------------------------ */
@@ -126,6 +139,9 @@ export function SimulationMetricEditor({ visible, request, onClose }: EditorProp
   const [value, setValue] = useState(existing ?? realValue);
   const [text, setText] = useState(formatNumber(existing ?? realValue, language));
   const [focused, setFocused] = useState(false);
+  // The slider spans a multiple of the real value (not a fixed million): one tick is a
+  // few likes on a 37-like post and a few thousand on a million-view reel.
+  const [range, setRange] = useState<RangeMultiplier>(10);
 
   // Reset the draft whenever the sheet opens for a (possibly different) metric.
   const currentKey = `${visible ? 'open' : 'closed'}:${overrideKey(scope, metric)}`;
@@ -136,10 +152,13 @@ export function SimulationMetricEditor({ visible, request, onClose }: EditorProp
       const initial = existing ?? realValue;
       setValue(initial);
       setText(formatNumber(initial, language));
+      setRange(10);
     }
   }
 
-  const sliderMax = useMemo(() => Math.max(1_000_000, realValue * 20, value), [realValue, value]);
+  const sliderMax = useMemo(() => Math.max(niceCeil(Math.max(realValue, 10) * range), value), [realValue, range, value]);
+  const sliderStep = Math.max(1, Math.round(sliderMax / 500));
+  const nudge = Math.max(1, Math.round(realValue * 0.05));
   const isRate = metric === 'avg_watch_time';
 
   const commit = (next: number) => {
@@ -210,7 +229,21 @@ export function SimulationMetricEditor({ visible, request, onClose }: EditorProp
           </View>
         </View>
 
-        <View style={[styles.inputWrap, { borderColor: focused ? colors.simulation : colors.borderStrong, backgroundColor: colors.surfaceElevated }]}>
+        <View style={styles.inputRow}>
+          <Pressable
+            onPress={() => {
+              triggerHaptic('selection');
+              commit(value - nudge);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`-${nudge}`}
+            style={[styles.nudge, { backgroundColor: colors.secondaryButton }]}
+          >
+            <Text variant="title" weight="700">
+              −
+            </Text>
+          </Pressable>
+        <View style={[styles.inputWrap, { flex: 1, borderColor: focused ? colors.simulation : colors.borderStrong, backgroundColor: colors.surfaceElevated }]}>
           <TextInput
             value={text}
             onChangeText={onChangeText}
@@ -231,13 +264,27 @@ export function SimulationMetricEditor({ visible, request, onClose }: EditorProp
             {formatCompact(value, language)}
           </Text>
         </View>
+          <Pressable
+            onPress={() => {
+              triggerHaptic('selection');
+              commit(value + nudge);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`+${nudge}`}
+            style={[styles.nudge, { backgroundColor: colors.secondaryButton }]}
+          >
+            <Text variant="title" weight="700">
+              +
+            </Text>
+          </Pressable>
+        </View>
 
         <Slider
           style={styles.slider}
           minimumValue={0}
           maximumValue={sliderMax}
           value={Math.min(value, sliderMax)}
-          step={1}
+          step={sliderStep}
           onValueChange={(v) => commit(v)}
           onSlidingComplete={() => triggerHaptic('selection')}
           minimumTrackTintColor={colors.simulation}
@@ -249,9 +296,28 @@ export function SimulationMetricEditor({ visible, request, onClose }: EditorProp
           <Text variant="small" color="tertiary">
             0
           </Text>
-          <Text variant="small" color="tertiary">
-            {t('sim.sliderMax')} {formatCompact(sliderMax, language)}
-          </Text>
+          <View style={styles.rangeRow}>
+            {RANGE_OPTIONS.map((r) => (
+              <Pressable
+                key={r}
+                onPress={() => {
+                  triggerHaptic('selection');
+                  setRange(r);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: range === r }}
+                accessibilityLabel={`${r}×`}
+                style={[styles.rangeChip, { backgroundColor: range === r ? colors.text : colors.secondaryButton }]}
+              >
+                <Text variant="small" weight="600" style={{ color: range === r ? colors.background : colors.textSecondary }}>
+                  {r}×
+                </Text>
+              </Pressable>
+            ))}
+            <Text variant="small" color="tertiary" style={{ marginLeft: spacing.xs }}>
+              {t('sim.sliderMax')} {formatCompact(sliderMax, language)}
+            </Text>
+          </View>
         </View>
 
         <Text variant="captionStrong" color="secondary" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
@@ -295,7 +361,11 @@ const styles = StyleSheet.create({
   valuesRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
   valueBox: { flex: 1 },
   simValueRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 2 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  nudge: { width: 44, height: 52, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   inputWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderRadius: radius.md, paddingHorizontal: spacing.lg, height: 52 },
+  rangeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rangeChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
   input: { flex: 1, fontSize: 22, fontWeight: '700', paddingVertical: 0 },
   slider: { width: '100%', height: 40, marginTop: spacing.md },
   sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -4 },

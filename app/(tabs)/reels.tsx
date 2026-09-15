@@ -1,14 +1,15 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View, useWindowDimensions, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/common/Avatar';
 import { EmptyState } from '@/components/common/States';
 import { Text } from '@/components/common/Text';
-import { BookmarkIcon, CameraIcon, CommentIcon, HeartIcon, MoreIcon, ReelsIcon, ShareIcon } from '@/components/icons';
+import { MediaVideo } from '@/components/feed/MediaVideo';
+import { BookmarkIcon, CameraIcon, CommentIcon, HeartIcon, MoreIcon, MusicNoteIcon, ReelsIcon, ShareIcon } from '@/components/icons';
 import { spacing, touch } from '@/constants/theme';
 import { flattenMedia, useAccount, useMediaFeed } from '@/features/instagram/hooks';
 import { useEffectiveAccount, useEffectiveMedia } from '@/features/simulation/useSimulation';
@@ -18,16 +19,25 @@ import { useLanguage, useT } from '@/i18n';
 import type { AppMedia } from '@/types/app';
 import { formatCompact } from '@/utils/format';
 
-/** Instagram Reels tab: full-screen vertical pager with the right-hand action rail. */
+const VIEWABILITY = { itemVisiblePercentThreshold: 60, minimumViewTime: 60 };
+
+/**
+ * Instagram Reels tab: full-screen vertical pager with the right-hand action rail.
+ * The page on screen plays its video with sound; a tap pauses it, the others show
+ * their cover frame.
+ */
 export default function ReelsTab() {
   const router = useRouter();
   const { colors } = useTheme();
   const t = useT();
   const language = useLanguage();
   const insets = useSafeAreaInsets();
+  const focused = useIsFocused();
   const { height: windowHeight, width } = useWindowDimensions();
   const pageHeight = windowHeight - touch.tabBarHeight - insets.bottom;
   const [liked, setLiked] = useState<Record<string, boolean>>({});
+  const [activeId, setActiveId] = useState<string | undefined>(undefined);
+  const [paused, setPaused] = useState(false);
 
   const { data: account } = useAccount();
   const effectiveAccount = useEffectiveAccount(account);
@@ -35,15 +45,47 @@ export default function ReelsTab() {
   const realMedia = useMemo(() => flattenMedia(feed.data?.pages), [feed.data]);
   const media = useEffectiveMedia(realMedia, effectiveAccount);
   const reels = useMemo(() => media.filter((m) => m.type === 'REEL' || m.type === 'VIDEO'), [media]);
+  const currentId = activeId ?? reels[0]?.id;
+
+  // Kept in state so the pair never changes identity (FlatList forbids that), even across Fast Refresh.
+  const [viewabilityConfigCallbackPairs] = useState(() => [
+    {
+      viewabilityConfig: VIEWABILITY,
+      onViewableItemsChanged: ({ viewableItems }: { viewableItems: ViewToken<AppMedia>[] }) => {
+        const first = viewableItems.find((v) => v.isViewable);
+        if (first?.item) {
+          setActiveId(first.item.id);
+          setPaused(false);
+        }
+      },
+    },
+  ]);
 
   const renderItem = useCallback(
     ({ item }: { item: AppMedia }) => {
       const isLiked = liked[item.id] ?? false;
       const likes = item.likeCount + (isLiked ? 1 : 0);
+      const cover = item.thumbnailUrl || item.mediaUrl;
+      const playing = focused && item.id === currentId && Boolean(item.videoUrl);
       return (
         <View style={{ width, height: pageHeight, backgroundColor: '#000' }}>
-          <Image source={{ uri: item.mediaUrl || item.thumbnailUrl }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={150} />
-          <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']} style={styles.shade} />
+          <Pressable
+            onPress={() => {
+              if (!playing) return;
+              triggerHaptic('selection');
+              setPaused((p) => !p);
+            }}
+            style={StyleSheet.absoluteFill}
+            accessibilityRole="button"
+            accessibilityLabel={item.caption.slice(0, 40) || t('feed.reel')}
+          >
+            {playing && item.videoUrl ? (
+              <MediaVideo media={item} uri={item.videoUrl} poster={cover} width={width} height={pageHeight} muted={false} paused={paused} contentFit="cover" />
+            ) : (
+              <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={150} />
+            )}
+          </Pressable>
+          <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']} style={styles.shade} pointerEvents="none" />
           {/* right rail */}
           <View style={[styles.rail, { bottom: spacing.xxl }]}>
             <Pressable
@@ -66,7 +108,7 @@ export default function ReelsTab() {
                 {formatCompact(item.commentCount, language)}
               </Text>
             </Pressable>
-            <Pressable onPress={() => router.push(`/media/${item.id}?insights=1`)} style={styles.railItem} accessibilityRole="button" accessibilityLabel={t('common.share')}>
+            <Pressable onPress={() => router.push(`/insights/post/${item.id}`)} style={styles.railItem} accessibilityRole="button" accessibilityLabel={t('common.share')}>
               <ShareIcon size={28} color="#fff" />
             </Pressable>
             <Pressable style={styles.railItem} accessibilityRole="button" accessibilityLabel={t('metric.saves')}>
@@ -77,7 +119,7 @@ export default function ReelsTab() {
             </Pressable>
           </View>
           {/* bottom info */}
-          <View style={[styles.info, { bottom: spacing.xl }]}>
+          <View style={[styles.info, { bottom: spacing.xl }]} pointerEvents="box-none">
             <Pressable onPress={() => router.push('/(tabs)/profile')} style={styles.userRow} accessibilityRole="button" accessibilityLabel={item.username}>
               <Avatar uri={effectiveAccount?.profilePictureUrl} size={34} name={item.username} />
               <Text variant="feedStrong" style={styles.white}>
@@ -90,9 +132,9 @@ export default function ReelsTab() {
               </Text>
             ) : null}
             <View style={styles.audioRow}>
-              <ReelsIcon size={14} color="#fff" strokeWidth={1.8} />
+              {item.music ? <MusicNoteIcon size={14} color="#fff" /> : <ReelsIcon size={14} color="#fff" strokeWidth={1.8} />}
               <Text variant="small" style={[styles.white, { marginLeft: 6 }]} numberOfLines={1}>
-                {item.username} · {t('reels.audio')}
+                {item.music ?? `${item.username} · ${t('reels.audio')}`}
               </Text>
             </View>
             {item.viewCount !== undefined ? (
@@ -104,7 +146,7 @@ export default function ReelsTab() {
         </View>
       );
     },
-    [liked, width, pageHeight, colors.like, effectiveAccount?.profilePictureUrl, language, router, t],
+    [liked, width, pageHeight, colors.like, effectiveAccount?.profilePictureUrl, language, router, t, currentId, paused, focused],
   );
 
   return (
@@ -121,6 +163,7 @@ export default function ReelsTab() {
           pagingEnabled
           showsVerticalScrollIndicator={false}
           getItemLayout={(_, index) => ({ length: pageHeight, offset: pageHeight * index, index })}
+          viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
           initialNumToRender={2}
           windowSize={3}
           removeClippedSubviews

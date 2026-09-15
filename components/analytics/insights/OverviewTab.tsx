@@ -7,9 +7,9 @@ import { StatCounter } from '@/components/common/StatCounter';
 import { Text } from '@/components/common/Text';
 import { CommentIcon, ExternalIcon, HeartIcon, RefreshIcon, ShareIcon, ShopIcon, UserIcon } from '@/components/icons';
 import { useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
-import { radius, spacing } from '@/constants/theme';
+import { radius, spacing, touch } from '@/constants/theme';
 import type { useInsightsData, InteractionKind } from '@/features/analytics/useInsightsData';
-import { ACCOUNT_SCOPE, useSimulationEnabled } from '@/features/simulation/useSimulation';
+import { ACCOUNT_SCOPE } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
 import type { MetricKey } from '@/types/app';
@@ -39,7 +39,6 @@ export function OverviewTab({ data, rangeLabel, onOpenRange, onInfo }: OverviewT
   const t = useT();
   const language = useLanguage();
   const editor = useMetricEditor();
-  const simulation = useSimulationEnabled();
   const [selected, setSelected] = useState<MetricKey>('views');
   const [kind, setKind] = useState<InteractionKind>('all');
 
@@ -77,7 +76,7 @@ export function OverviewTab({ data, rangeLabel, onOpenRange, onInfo }: OverviewT
               key={card.key}
               onPress={() => setSelected(card.key)}
               onLongPress={() => editor.open({ scope: ACCOUNT_SCOPE, metric: card.key, realValue: m.realValue })}
-              delayLongPress={300}
+              delayLongPress={touch.longPressMs}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               accessibilityLabel={`${t(card.labelKey)} ${value}`}
@@ -116,9 +115,8 @@ export function OverviewTab({ data, rangeLabel, onOpenRange, onInfo }: OverviewT
       {/* ---- views by content type ---- */}
       <SectionHeading title={t('insights.viewsByType')} onInfo={onInfo} />
       <Pressable
-        onPress={simulation ? () => data.byKey('reach') && editor.open({ scope: ACCOUNT_SCOPE, metric: 'reach', realValue: data.byKey('reach')!.realValue }) : undefined}
         onLongPress={() => data.byKey('reach') && editor.open({ scope: ACCOUNT_SCOPE, metric: 'reach', realValue: data.byKey('reach')!.realValue })}
-        delayLongPress={300}
+        delayLongPress={touch.longPressMs}
         style={styles.viewersRow}
         accessibilityRole="button"
         accessibilityLabel={`${t('insights.viewers')} ${viewers}`}
@@ -185,9 +183,8 @@ export function OverviewTab({ data, rangeLabel, onOpenRange, onInfo }: OverviewT
         return (
           <Pressable
             key={row.label}
-            onPress={simulation && m && row.key ? () => editor.open({ scope: ACCOUNT_SCOPE, metric: row.key!, realValue: m.realValue }) : undefined}
             onLongPress={m && row.key ? () => editor.open({ scope: ACCOUNT_SCOPE, metric: row.key!, realValue: m.realValue }) : undefined}
-            delayLongPress={300}
+            delayLongPress={touch.longPressMs}
             style={styles.activityRow}
             accessibilityRole="button"
             accessibilityLabel={`${row.label} ${value}`}

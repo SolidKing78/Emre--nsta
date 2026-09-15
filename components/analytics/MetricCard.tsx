@@ -8,9 +8,9 @@ import { Text } from '@/components/common/Text';
 import { Sparkline } from '@/components/charts/Sparkline';
 import { EditIcon, TrendDownIcon, TrendUpIcon } from '@/components/icons';
 import { metricLabelKey, useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
-import { radius, spacing } from '@/constants/theme';
+import { radius, spacing, touch } from '@/constants/theme';
 import type { DisplayMetric } from '@/features/simulation/useSimulation';
-import { useSimulationEnabled, useSimulationIndicators } from '@/features/simulation/useSimulation';
+import { useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
 import type { SimulationScope } from '@/types/simulation';
@@ -36,7 +36,6 @@ export function MetricCard({ metric, scope, periodLabel, style, compact = false,
   const t = useT();
   const language = useLanguage();
   const editor = useMetricEditor();
-  const simulation = useSimulationEnabled();
   const indicators = useSimulationIndicators();
   const change = percentChange(metric.value, metric.previousValue);
   const positive = change !== null && change > 0;
@@ -48,9 +47,9 @@ export function MetricCard({ metric, scope, periodLabel, style, compact = false,
 
   return (
     <PressableScale
-      onPress={onPress ?? (simulation ? openEditor : undefined)}
+      onPress={onPress}
       onLongPress={openEditor}
-      delayLongPress={300}
+      delayLongPress={touch.longPressMs}
       scaleTo={0.98}
       haptic={false}
       accessibilityRole="button"

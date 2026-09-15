@@ -29,7 +29,8 @@ export type MetricKey =
   | 'accounts_engaged'
   | 'avg_watch_time'
   | 'replays'
-  | 'follows_from_post';
+  | 'follows_from_post'
+  | 'reposts';
 
 export interface SeriesPoint {
   /** ISO date (yyyy-mm-dd) */
@@ -70,6 +71,8 @@ export interface AppMediaChild {
   type: MediaType;
   mediaUrl: string;
   thumbnailUrl: string;
+  /** Direct video file for video slides of an album, when the source exposes one. */
+  videoUrl?: string;
 }
 
 export interface AppMedia {

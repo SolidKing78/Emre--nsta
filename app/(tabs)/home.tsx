@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View, type ViewToken } from 'react-native';
 
 import { AppHeader } from '@/components/common/AppHeader';
 import { IconButton } from '@/components/common/IconButton';
@@ -16,12 +16,16 @@ import { HeartIcon, ShareIcon } from '@/components/icons';
 import { SimulationBanner } from '@/components/simulation/SimulationBadge';
 import { spacing } from '@/constants/theme';
 import { useContentPerformance } from '@/features/analytics/useContentPerformance';
-import { flattenMedia, useAccount, useMediaFeed, useRefreshAll, useStories } from '@/features/instagram/hooks';
+import { flattenMedia, useAccount, useMediaFeed, useRefreshAll, useSession, useStories } from '@/features/instagram/hooks';
 import { useEffectiveAccount, useEffectiveMedia, useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
 import { useT } from '@/i18n';
+import { mockStories } from '@/mocks/mockData';
 import { useAuthStore } from '@/store/authStore';
 import type { AppMedia } from '@/types/app';
+
+// "Covers at least 40% of the screen" — works for tall reels on small phones and short landscape posts alike.
+const VIEWABILITY = { viewAreaCoveragePercentThreshold: 40, minimumViewTime: 80 };
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -36,13 +40,30 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [options, setOptions] = useState<AppMedia | null>(null);
   const [commentsFor, setCommentsFor] = useState<AppMedia | null>(null);
+  const [activeId, setActiveId] = useState<string | undefined>(undefined);
+  const session = useSession();
 
   const realMedia = useMemo(() => flattenMedia(feed.data?.pages), [feed.data]);
   const media = useEffectiveMedia(realMedia, effectiveAccount);
   // Repost counts next to the ↻ icon come from the same per-post insights the profile grid uses.
   const performance = useContentPerformance(media, effectiveAccount);
-  const sharesById = useMemo(() => Object.fromEntries(performance.items.map((p) => [p.media.id, p.shares])), [performance.items]);
+  const statsById = useMemo(() => Object.fromEntries(performance.items.map((p) => [p.media.id, { views: p.views, shares: p.shares }])), [performance.items]);
   const showFollow = effectiveAccount?.source === 'public';
+  // Likers are only shown where the source has real people behind them (the demo data set).
+  const likerAvatars = useMemo(() => (session?.source === 'demo' ? mockStories.filter((s) => !s.isSelf).slice(0, 3).map((s) => s.avatarUrl) : undefined), [session?.source]);
+
+  // Only the post on screen plays its video (Instagram autoplays one at a time). FlatList
+  // requires the config/callback pair to keep its identity for the list's whole life, so it
+  // lives in state (which even survives Fast Refresh).
+  const [viewabilityConfigCallbackPairs] = useState(() => [
+    {
+      viewabilityConfig: VIEWABILITY,
+      onViewableItemsChanged: ({ viewableItems }: { viewableItems: ViewToken<AppMedia>[] }) => {
+        const first = viewableItems.find((v) => v.isViewable);
+        setActiveId(first?.item?.id);
+      },
+    },
+  ]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -54,7 +75,7 @@ export default function HomeScreen() {
   }, [refreshAll]);
 
   const openDetail = useCallback((item: AppMedia) => router.push(`/media/${item.id}`), [router]);
-  const openInsights = useCallback((item: AppMedia) => router.push(`/media/${item.id}?insights=1`), [router]);
+  const openInsights = useCallback((item: AppMedia) => router.push(`/insights/post/${item.id}`), [router]);
 
   const renderItem = useCallback(
     ({ item }: { item: AppMedia }) => (
@@ -66,11 +87,16 @@ export default function HomeScreen() {
         onPressMore={setOptions}
         onPressInsights={openInsights}
         onPressComments={setCommentsFor}
-        shareCount={sharesById[item.id]}
+        onPressPromote={openInsights}
+        own={!showFollow}
+        active={item.id === activeId}
+        viewCount={statsById[item.id]?.views}
+        shareCount={statsById[item.id]?.shares}
+        likerAvatars={likerAvatars}
         showFollow={showFollow}
       />
     ),
-    [effectiveAccount?.profilePictureUrl, effectiveAccount?.isVerified, openDetail, openInsights, sharesById, showFollow],
+    [effectiveAccount?.profilePictureUrl, effectiveAccount?.isVerified, openDetail, openInsights, statsById, showFollow, activeId, likerAvatars],
   );
 
   const header = (
@@ -120,6 +146,7 @@ export default function HomeScreen() {
           if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
         }}
         onEndReachedThreshold={0.6}
+        viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
         showsVerticalScrollIndicator={false}
         initialNumToRender={3}

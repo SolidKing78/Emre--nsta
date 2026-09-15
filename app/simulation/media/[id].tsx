@@ -20,6 +20,7 @@ import { useDisplayMetrics, useSimulationActions, useSimulationEnabled, useSimul
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { upperCase, useLanguage, useT } from '@/i18n';
+import { completePostMetrics } from '@/services/analytics/postInsights';
 import type { AppMetric, MetricKey } from '@/types/app';
 import { GROWTH_PRESETS, SIMULATABLE_MEDIA_METRICS } from '@/types/simulation';
 import { formatLongDate } from '@/utils/date';
@@ -36,19 +37,11 @@ export default function MediaSimulationScreen() {
   const actions = useSimulationActions();
   const detail = useMediaDetail(id);
 
+  // The same metric set the "Gönderi istatistikleri" screen shows, so edits line up 1:1.
   const baseMetrics = useMemo<AppMetric[]>(() => {
-    const list: AppMetric[] = [];
-    const source = detail.realInsight?.metrics ?? [];
-    for (const key of SIMULATABLE_MEDIA_METRICS) {
-      const m = source.find((x) => x.key === key);
-      if (m) list.push(m);
-      else if (detail.realMedia) {
-        if (key === 'likes') list.push({ key, value: detail.realMedia.likeCount, source: 'api' });
-        if (key === 'comments') list.push({ key, value: detail.realMedia.commentCount, source: 'api' });
-        if (key === 'views' && detail.realMedia.viewCount !== undefined) list.push({ key, value: detail.realMedia.viewCount, source: 'api' });
-      }
-    }
-    return list;
+    if (!detail.realMedia) return [];
+    const complete = completePostMetrics(detail.realMedia, detail.realInsight);
+    return SIMULATABLE_MEDIA_METRICS.map((key) => complete.find((m) => m.key === key)).filter((m): m is AppMetric => Boolean(m));
   }, [detail.realInsight, detail.realMedia]);
   const metrics = useDisplayMetrics(detail.scope, baseMetrics);
 

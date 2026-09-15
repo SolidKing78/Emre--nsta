@@ -1,6 +1,8 @@
 import type { AppMedia, AppMediaInsight, MediaType, MetricKey } from '@/types/app';
 import { metricValue } from '@/types/app';
 
+import { estimateReposts } from './postInsights';
+
 export type ContentFilter = 'all' | 'posts' | 'reels' | 'carousels';
 
 export type ContentSort = 'views' | 'reach' | 'engaged' | 'saves' | 'shares' | 'comments';
@@ -13,6 +15,8 @@ export interface ContentPerformance {
   comments: number;
   saves: number;
   shares: number;
+  /** Reposts — from the source when it has them, else the same estimate the post-insights screen shows. */
+  reposts: number;
   interactions: number;
   engagementRate: number | null;
   /** Metrics that the source actually provided (others are hidden). */
@@ -54,6 +58,7 @@ export function buildPerformance(
   const comments = available.has('comments') ? metricValue(metrics, 'comments') : media.commentCount;
   const saves = metricValue(metrics, 'saves');
   const shares = metricValue(metrics, 'shares');
+  const reposts = available.has('reposts') ? metricValue(metrics, 'reposts') : estimateReposts(media.id, shares);
   const views = available.has('views') ? metricValue(metrics, 'views') : (media.viewCount ?? 0);
   const reach = metricValue(metrics, 'reach');
   const interactions = available.has('interactions') ? metricValue(metrics, 'interactions') : likes + comments + saves + shares;
@@ -62,7 +67,7 @@ export function buildPerformance(
   if (!available.has('likes')) available.add('likes');
   if (!available.has('comments')) available.add('comments');
   if (media.viewCount !== undefined) available.add('views');
-  return { media, views, reach, likes, comments, saves, shares, interactions, engagementRate, available };
+  return { media, views, reach, likes, comments, saves, shares, reposts, interactions, engagementRate, available };
 }
 
 export function sortPerformance(items: ContentPerformance[], sort: ContentSort): ContentPerformance[] {

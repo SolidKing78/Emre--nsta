@@ -1,11 +1,14 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { normalizeBoosts } from '@/services/simulation/boost';
 import { clampGrowth } from '@/services/simulation/growth';
 import type { MetricKey } from '@/types/app';
 import {
   overrideKey,
+  parseOverrideKey,
+  type BoostKey,
+  type BoostMap,
   type OverrideKey,
   type ProfileOverrides,
   type SimulatedMedia,
@@ -13,6 +16,8 @@ import {
   type SimulationScope,
 } from '@/types/simulation';
 import { uid } from '@/utils/random';
+
+import { durableStorage, hydrationHandler, isFiniteNumber, isRecord, isString } from './persistence';
 
 /**
  * Simulation overlay store.
@@ -45,6 +50,11 @@ interface SimulationState {
   clearOverride: (accountKey: string, scope: SimulationScope, metric: MetricKey) => void;
   resetAll: (accountKey: string) => void;
   setGrowthPercent: (accountKey: string, percent: number) => void;
+  /** Sets one "Etkileşimi artır" dial; 0 removes it. */
+  setBoost: (accountKey: string, key: BoostKey, percent: number) => void;
+  /** Replaces every dial at once (the editor's Apply). */
+  setBoosts: (accountKey: string, boosts: BoostMap) => void;
+  clearBoosts: (accountKey: string) => void;
   applyFactorToKeys: (accountKey: string, entries: { key: OverrideKey; realValue: number }[], factor: number) => void;
 
   createProfile: (accountKey: string, name: string) => string;
@@ -79,6 +89,114 @@ function getAccount(state: SimulationState, accountKey: string): AccountSimulati
   return state.accounts[accountKey] ?? createDefaultAccount();
 }
 
+/* ------------------------------------------------------------------ */
+/* Persisted shape validation                                           */
+/* ------------------------------------------------------------------ */
+
+/** Storage version; bump together with `migratePersisted` when the persisted shape changes. */
+export const SIMULATION_STORAGE_VERSION = 2;
+
+type PersistedSimulation = Pick<SimulationState, 'enabled' | 'accounts' | 'lastChangedAt'>;
+
+function sanitizeOverrides(raw: unknown): Record<OverrideKey, number> {
+  const out: Record<OverrideKey, number> = {};
+  if (!isRecord(raw)) return out;
+  for (const [key, value] of Object.entries(raw)) {
+    if (parseOverrideKey(key) && isFiniteNumber(value) && value >= 0) out[key] = Math.round(value);
+  }
+  return out;
+}
+
+function sanitizeProfile(raw: unknown): SimulationProfile | null {
+  if (!isRecord(raw) || !isString(raw.id) || !raw.id) return null;
+  const growth = isFiniteNumber(raw.growthPercent) ? clampGrowth(raw.growthPercent) : undefined;
+  return {
+    id: raw.id,
+    name: isString(raw.name) && raw.name.trim() ? raw.name : DEFAULT_PROFILE_NAME,
+    createdAt: isString(raw.createdAt) ? raw.createdAt : new Date().toISOString(),
+    overrides: sanitizeOverrides(raw.overrides),
+    ...(growth !== undefined && growth !== 0 ? { growthPercent: growth } : {}),
+    boosts: normalizeBoosts(isRecord(raw.boosts) ? (raw.boosts as SimulationProfile['boosts']) : undefined),
+  };
+}
+
+const MEDIA_TYPES: readonly SimulatedMedia['type'][] = ['IMAGE', 'VIDEO', 'REEL', 'CAROUSEL_ALBUM'];
+
+function sanitizeSimulatedMedia(raw: unknown): SimulatedMedia[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SimulatedMedia[] = [];
+  for (const item of raw) {
+    if (!isRecord(item) || !isString(item.id) || !isString(item.localUri) || !item.localUri) continue;
+    const type = MEDIA_TYPES.includes(item.type as SimulatedMedia['type']) ? (item.type as SimulatedMedia['type']) : 'IMAGE';
+    out.push({
+      id: item.id,
+      type,
+      localUri: item.localUri,
+      caption: isString(item.caption) ? item.caption : '',
+      timestamp: isString(item.timestamp) ? item.timestamp : new Date().toISOString(),
+      likeCount: isFiniteNumber(item.likeCount) ? Math.max(0, Math.round(item.likeCount)) : 0,
+      commentCount: isFiniteNumber(item.commentCount) ? Math.max(0, Math.round(item.commentCount)) : 0,
+      ...(isFiniteNumber(item.viewCount) ? { viewCount: Math.max(0, Math.round(item.viewCount)) } : {}),
+    });
+  }
+  return out;
+}
+
+function sanitizeProfileOverrides(raw: unknown): ProfileOverrides {
+  if (!isRecord(raw)) return {};
+  const out: ProfileOverrides = {};
+  if (isString(raw.name)) out.name = raw.name;
+  if (isString(raw.biography)) out.biography = raw.biography;
+  if (isString(raw.website)) out.website = raw.website;
+  if (isString(raw.category)) out.category = raw.category;
+  if (isString(raw.profilePictureUri)) out.profilePictureUri = raw.profilePictureUri;
+  if (typeof raw.isVerified === 'boolean') out.isVerified = raw.isVerified;
+  return out;
+}
+
+function sanitizeAccount(raw: unknown): AccountSimulation | null {
+  if (!isRecord(raw)) return null;
+  const profiles = (Array.isArray(raw.profiles) ? raw.profiles : []).map(sanitizeProfile).filter((p): p is SimulationProfile => p !== null);
+  if (profiles.length === 0) return null;
+  const first = profiles[0] as SimulationProfile;
+  const activeProfileId = isString(raw.activeProfileId) && profiles.some((p) => p.id === raw.activeProfileId) ? raw.activeProfileId : first.id;
+  return {
+    profiles,
+    activeProfileId,
+    simulatedMedia: sanitizeSimulatedMedia(raw.simulatedMedia),
+    profileOverrides: sanitizeProfileOverrides(raw.profileOverrides),
+  };
+}
+
+/**
+ * Turns whatever came out of storage into a valid state slice. Anything that does not
+ * fit is dropped (never thrown), so a damaged entry can cost at most that one account's
+ * scenario — never the app.
+ */
+export function sanitizePersisted(raw: unknown): PersistedSimulation {
+  const out: PersistedSimulation = { enabled: false, accounts: {}, lastChangedAt: undefined };
+  try {
+    if (!isRecord(raw)) return out;
+    out.enabled = raw.enabled === true;
+    out.lastChangedAt = isString(raw.lastChangedAt) ? raw.lastChangedAt : undefined;
+    if (isRecord(raw.accounts)) {
+      for (const [key, value] of Object.entries(raw.accounts)) {
+        const account = sanitizeAccount(value);
+        if (account) out.accounts[key] = account;
+      }
+    }
+  } catch (error) {
+    console.warn('[simulation] persisted state could not be read; starting clean', error);
+    return { enabled: false, accounts: {}, lastChangedAt: undefined };
+  }
+  return out;
+}
+
+/** v0/v1 → v2: same fields; the sanitizer fills in what older builds did not have (boosts, growth). */
+export function migratePersisted(raw: unknown, _fromVersion: number): PersistedSimulation {
+  return sanitizePersisted(raw);
+}
+
 function activeProfile(account: AccountSimulation): SimulationProfile {
   return account.profiles.find((p) => p.id === account.activeProfileId) ?? (account.profiles[0] as SimulationProfile);
 }
@@ -93,6 +211,8 @@ function updateActiveProfile(
     profiles: account.profiles.map((p) => (p.id === current.id ? updater(p) : p)),
   };
 }
+
+const hydration = hydrationHandler<SimulationState>();
 
 export const useSimulationStore = create<SimulationState>()(
   persist(
@@ -155,7 +275,7 @@ export const useSimulationStore = create<SimulationState>()(
             lastChangedAt: new Date().toISOString(),
             accounts: {
               ...s.accounts,
-              [accountKey]: updateActiveProfile(account, (p) => ({ ...p, overrides: {}, growthPercent: 0 })),
+              [accountKey]: updateActiveProfile(account, (p) => ({ ...p, overrides: {}, growthPercent: 0, boosts: {} })),
             },
           };
         }),
@@ -168,6 +288,42 @@ export const useSimulationStore = create<SimulationState>()(
             accounts: {
               ...s.accounts,
               [accountKey]: updateActiveProfile(account, (p) => ({ ...p, growthPercent: clampGrowth(percent) })),
+            },
+          };
+        }),
+
+      setBoost: (accountKey, key, percent) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: {
+              ...s.accounts,
+              [accountKey]: updateActiveProfile(account, (p) => ({ ...p, boosts: normalizeBoosts({ ...p.boosts, [key]: percent }) })),
+            },
+          };
+        }),
+
+      setBoosts: (accountKey, boosts) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: {
+              ...s.accounts,
+              [accountKey]: updateActiveProfile(account, (p) => ({ ...p, boosts: normalizeBoosts(boosts) })),
+            },
+          };
+        }),
+
+      clearBoosts: (accountKey) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: {
+              ...s.accounts,
+              [accountKey]: updateActiveProfile(account, (p) => ({ ...p, boosts: {} })),
             },
           };
         }),
@@ -235,7 +391,14 @@ export const useSimulationStore = create<SimulationState>()(
                 ...account,
                 profiles: [
                   ...account.profiles,
-                  { id, name: `${source.name} (2)`, createdAt: new Date().toISOString(), overrides: { ...source.overrides } },
+                  {
+                    id,
+                    name: `${source.name} (2)`,
+                    createdAt: new Date().toISOString(),
+                    overrides: { ...source.overrides },
+                    growthPercent: source.growthPercent,
+                    boosts: { ...source.boosts },
+                  },
                 ],
                 activeProfileId: id,
               },
@@ -341,14 +504,17 @@ export const useSimulationStore = create<SimulationState>()(
     }),
     {
       name: 'sociallens.simulation.v1',
-      storage: createJSONStorage(() => AsyncStorage),
+      version: SIMULATION_STORAGE_VERSION,
+      storage: createJSONStorage(() => durableStorage),
       partialize: (state) => ({ enabled: state.enabled, accounts: state.accounts, lastChangedAt: state.lastChangedAt }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHydrated(true);
-      },
+      migrate: migratePersisted,
+      // Validate on every load, not only on migrations: a bad entry costs one scenario, never a crash.
+      merge: (persisted, current) => ({ ...current, ...sanitizePersisted(persisted) }),
+      onRehydrateStorage: hydration.onRehydrateStorage,
     },
   ),
 );
+hydration.attach(useSimulationStore);
 
 /* ------------------------------------------------------------------ */
 /* Selectors (pure, safe to use in components)                         */
@@ -372,10 +538,17 @@ export function selectGrowthPercent(state: SimulationState, accountKey: string):
   return selectActiveProfile(state, accountKey).growthPercent ?? 0;
 }
 
+export function selectBoosts(state: SimulationState, accountKey: string): BoostMap {
+  const account = state.accounts[accountKey];
+  if (!account) return EMPTY_BOOSTS;
+  return selectActiveProfile(state, accountKey).boosts ?? EMPTY_BOOSTS;
+}
+
 export function countOverrides(overrides: Record<OverrideKey, number>, prefix?: string): number {
   return Object.keys(overrides).filter((k) => (prefix ? k.startsWith(prefix) : true)).length;
 }
 
 export const EMPTY_OVERRIDES: Record<OverrideKey, number> = Object.freeze({}) as Record<OverrideKey, number>;
+export const EMPTY_BOOSTS: BoostMap = Object.freeze({}) as BoostMap;
 export const EMPTY_SIMULATED_MEDIA: readonly SimulatedMedia[] = Object.freeze([]);
 export const EMPTY_PROFILE_OVERRIDES: ProfileOverrides = Object.freeze({});

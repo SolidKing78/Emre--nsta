@@ -1,4 +1,4 @@
-import { formatCompact, formatNumber, formatPercent, parseNumericInput, percentChange } from '@/utils/format';
+import { formatCompact, formatNumber, formatPercent, formatWatchTime, parseNumericInput, percentChange } from '@/utils/format';
 
 describe('formatCompact', () => {
   it('formats thousands and millions like Instagram (en)', () => {
@@ -48,5 +48,14 @@ describe('parseNumericInput', () => {
     expect(parseNumericInput('50 000')).toBe(50000);
     expect(parseNumericInput('abc')).toBeNull();
     expect(parseNumericInput('')).toBeNull();
+  });
+});
+
+describe('formatWatchTime', () => {
+  it("uses Instagram's watch-time style", () => {
+    expect(formatWatchTime(30, 'tr')).toBe('30sn');
+    expect(formatWatchTime(65.4, 'tr')).toBe('1dk 05sn');
+    expect(formatWatchTime(9.6, 'en')).toBe('10s');
+    expect(formatWatchTime(125, 'en')).toBe('2m 05s');
   });
 });

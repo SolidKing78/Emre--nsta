@@ -25,16 +25,28 @@ import {
   TrialReelsIcon,
   UserIcon,
 } from '@/components/icons';
+import { EngagementBoostSheet } from '@/components/simulation/EngagementBoostEditor';
 import { GrowthRateSheet } from '@/components/simulation/GrowthRateEditor';
 import { useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
-import { radius, spacing } from '@/constants/theme';
+import { radius, spacing, touch } from '@/constants/theme';
 import { deriveFollowerGrowth } from '@/features/analytics/useInsightsData';
 import { flattenMedia, useAccount, useAccountInsights, useMediaFeed, useRefreshAll } from '@/features/instagram/hooks';
-import { ACCOUNT_SCOPE, useDisplayMetrics, useEffectiveAccount, useEffectiveMedia, useGrowthPercent, useSimulationActions, useSimulationEnabled } from '@/features/simulation/useSimulation';
+import {
+  ACCOUNT_SCOPE,
+  useBoosts,
+  useDisplayMetrics,
+  useEffectiveAccount,
+  useEffectiveMedia,
+  useGrowthPercent,
+  useSimulationActions,
+  useSimulationEnabled,
+} from '@/features/simulation/useSimulation';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
+import { countBoosts } from '@/services/simulation/boost';
 import type { MetricKey } from '@/types/app';
+import { BOOST_KEYS } from '@/types/simulation';
 import { buildDateRange, formatShortDate, isWithinRange } from '@/utils/date';
 
 /**
@@ -52,8 +64,11 @@ export default function DashboardScreen() {
   const simulation = useSimulationEnabled();
   const { setEnabled } = useSimulationActions();
   const growthPercent = useGrowthPercent();
+  const boosts = useBoosts();
+  const boostCount = countBoosts(boosts);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [growthOpen, setGrowthOpen] = useState(false);
+  const [boostOpen, setBoostOpen] = useState(false);
   const [igOnly, setIgOnly] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const range = useMemo(() => buildDateRange('30d'), []);
@@ -145,7 +160,7 @@ export default function DashboardScreen() {
               key={row.label}
               onPress={row.onPress}
               onLongPress={row.key ? () => openEditor(row.key!) : undefined}
-              delayLongPress={300}
+              delayLongPress={touch.longPressMs}
               style={styles.statRow}
               accessibilityRole="button"
               accessibilityLabel={`${row.label} ${row.value}`}
@@ -209,6 +224,15 @@ export default function DashboardScreen() {
         />
         <Divider inset={spacing.lg} />
         <ListRow
+          title={t('boost.title')}
+          subtitle={boostCount > 0 ? t('boost.active', { n: boostCount, total: BOOST_KEYS.length }) : t('dashboard.boostSub')}
+          onPress={() => {
+            setSettingsOpen(false);
+            setTimeout(() => setBoostOpen(true), 250);
+          }}
+        />
+        <Divider inset={spacing.lg} />
+        <ListRow
           title={t('growthRate.title')}
           subtitle={growthPercent !== 0 ? `${t('growthRate.current')}: ${growthPercent > 0 ? '+' : ''}${growthPercent}%` : t('dashboard.growthRateSub')}
           onPress={() => {
@@ -241,6 +265,7 @@ export default function DashboardScreen() {
       </BottomSheet>
 
       <GrowthRateSheet visible={growthOpen} onClose={() => setGrowthOpen(false)} previewMetrics={insights.data?.metrics} />
+      <EngagementBoostSheet visible={boostOpen} onClose={() => setBoostOpen(false)} />
 
       <BottomSheet visible={Boolean(igOnly)} onClose={() => setIgOnly(null)} title={igOnly ?? ''}>
         <View style={styles.igOnly}>

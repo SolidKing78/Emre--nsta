@@ -6,9 +6,9 @@ import { LineChart } from '@/components/charts/LineChart';
 import { StatCounter } from '@/components/common/StatCounter';
 import { Text } from '@/components/common/Text';
 import { useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
-import { spacing } from '@/constants/theme';
+import { spacing, touch } from '@/constants/theme';
 import type { useInsightsData } from '@/features/analytics/useInsightsData';
-import { ACCOUNT_SCOPE, useSimulationEnabled } from '@/features/simulation/useSimulation';
+import { ACCOUNT_SCOPE } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
 import type { DateRange } from '@/types/app';
@@ -33,7 +33,6 @@ export function AudienceTab({ data, range, rangeLabel, onOpenRange, onInfo }: Au
   const t = useT();
   const language = useLanguage();
   const editor = useMetricEditor();
-  const simulation = useSimulationEnabled();
   const [view, setView] = useState<GrowthView>('total');
 
   const followers = data.effectiveAccount?.followersCount ?? 0;
@@ -52,9 +51,8 @@ export function AudienceTab({ data, range, rangeLabel, onOpenRange, onInfo }: Au
         <DropdownButton label={rangeLabel} onPress={onOpenRange} large />
       </View>
       <Pressable
-        onPress={simulation ? () => editor.open({ scope: ACCOUNT_SCOPE, metric: 'followers', realValue: realFollowers }) : undefined}
         onLongPress={() => editor.open({ scope: ACCOUNT_SCOPE, metric: 'followers', realValue: realFollowers })}
-        delayLongPress={300}
+        delayLongPress={touch.longPressMs}
         style={styles.big}
         accessibilityRole="button"
         accessibilityLabel={`${t('insights.followers')} ${followers}`}

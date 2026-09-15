@@ -265,8 +265,8 @@ async function writeEmbedCache(code: string, embed: ParsedEmbed): Promise<void> 
 }
 
 /** Loads the embed page for one post. `null` when Instagram did not expose the numbers. */
-export async function fetchEmbedDetails(code: string): Promise<ParsedEmbed | null> {
-  const cached = await readEmbedCache(code);
+export async function fetchEmbedDetails(code: string, options: { force?: boolean } = {}): Promise<ParsedEmbed | null> {
+  const cached = options.force ? null : await readEmbedCache(code);
   if (cached) return cached;
   const response = await fetchWithTimeout(
     `https://www.instagram.com/p/${encodeURIComponent(code)}/embed/captioned/`,
@@ -285,6 +285,23 @@ export async function fetchEmbedDetails(code: string): Promise<ParsedEmbed | nul
 function shortcodeOf(media: AppMedia): string | undefined {
   const match = media.permalink.match(/\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)\//);
   return match?.[1];
+}
+
+/**
+ * Instagram's CDN video links are signed and expire after a day or so. When playback
+ * fails on a cached link, the player asks for a fresh one; this re-reads the embed
+ * page (bypassing the 6 h cache) and returns the new URL, or `undefined`.
+ */
+export async function refreshPublicVideoUrl(media: AppMedia): Promise<string | undefined> {
+  if (media.source !== 'public') return undefined;
+  const code = shortcodeOf(media);
+  if (!code || (await isOffline())) return undefined;
+  try {
+    const embed = await fetchEmbedDetails(code, { force: true });
+    return embed?.videoUrl;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

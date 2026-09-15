@@ -615,6 +615,38 @@ export function MuteIcon({ size, color = '#fff', strokeWidth = 1.8 }: IconProps)
   );
 }
 
+/** Dashed check circle Instagram shows next to your name when the account is not verified. */
+export function VerifiedOutlineIcon({ size = 16, color = '#737373', strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Circle cx="12" cy="12" r="9" fill="none" stroke={color} strokeWidth={strokeWidth} strokeDasharray="3 2.2" />
+      <Polyline points="8 12.2 10.8 15 16 9.6" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth + 0.4} />
+    </Svg>
+  );
+}
+
+/** Threads "@" glyph used in the profile header and the Threads pill. */
+export function ThreadsIcon({ size, color = '#000', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Path d="M12 3.5c-4.8 0-8 3.2-8 8.5s3.2 8.5 8.2 8.5c3.6 0 6-1.6 6.6-4.4" fill="none" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+      <Path d="M8.6 14.2c0-1.9 1.7-3 3.9-3 3.6 0 5.7 1.4 5.7 3.9 0 2.2-1.9 3.6-4.4 3.6-2.2 0-3.9-1-3.9-2.6 0-1.4 1.4-2.3 3.4-2.3 1.7 0 3.2.5 4.3 1.3" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} />
+      <Path d="M8.9 9.6c.7-1.5 2-2.3 3.7-2.3 2 0 3.3 1 3.8 2.8" fill="none" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
+/** Speaker with sound waves — the state of the badge once a feed video is unmuted. */
+export function SoundIcon({ size, color = '#fff', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Path d="M4 9.5v5h3.2L12 18.5v-13L7.2 9.5H4z" fill={color} stroke={color} strokeLinejoin="round" strokeWidth={strokeWidth} />
+      <Path d="M15.5 9.2a4 4 0 0 1 0 5.6" fill="none" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+      <Path d="M18.3 6.6a8 8 0 0 1 0 10.8" fill="none" stroke={color} strokeLinecap="round" strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
 /** Post "more" control as drawn in the current Instagram feed (two short lines). */
 export function MoreLinesIcon({ size, color = '#000', strokeWidth = 2 }: IconProps) {
   return (

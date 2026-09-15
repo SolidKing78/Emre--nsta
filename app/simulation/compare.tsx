@@ -17,7 +17,7 @@ import { APP_NAME } from '@/constants/config';
 import { radius, spacing } from '@/constants/theme';
 import { useContentPerformance } from '@/features/analytics/useContentPerformance';
 import { flattenMedia, useAccount, useAccountInsights, useMediaFeed } from '@/features/instagram/hooks';
-import { ACCOUNT_SCOPE, resolveWithGrowth, useActiveScenario, useGrowthPercent, useOverrides, useSimulationIndicators } from '@/features/simulation/useSimulation';
+import { ACCOUNT_SCOPE, resolveWithGrowth, useActiveScenario, useBoosts, useGrowthPercent, useOverrides, useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useT } from '@/i18n';
@@ -36,6 +36,7 @@ export default function CompareScreen() {
   const indicators = useSimulationIndicators();
   const overrides = useOverrides();
   const growth = useGrowthPercent();
+  const boosts = useBoosts();
   const scenario = useActiveScenario();
   const { data: account } = useAccount();
   const range = useMemo(() => buildDateRange('30d'), []);
@@ -55,7 +56,7 @@ export default function CompareScreen() {
       const realValue = metrics.find((m) => m.key === key)?.value ?? (key === 'followers' ? account?.followersCount : undefined);
       if (realValue === undefined) return;
       // Compare always previews the scenario, regardless of the switch.
-      const sim = resolveWithGrowth(ACCOUNT_SCOPE, key, realValue, overrides, true, growth).displayValue;
+      const sim = resolveWithGrowth(ACCOUNT_SCOPE, key, realValue, overrides, true, growth, boosts).displayValue;
       out.push({ label: t(`metric.${key}`), real: realValue, simulated: sim });
     };
     pushAccount('views');
@@ -63,7 +64,7 @@ export default function CompareScreen() {
     out.push({ label: t('metric.comments'), real: sum(real.items, 'comments'), simulated: sum(simulated.items, 'comments') });
     for (const key of ACCOUNT_ROWS.filter((k) => k !== 'views')) pushAccount(key);
     return out;
-  }, [insights.data, account, overrides, growth, real.items, simulated.items, t]);
+  }, [insights.data, account, overrides, growth, boosts, real.items, simulated.items, t]);
 
   const share = async () => {
     try {

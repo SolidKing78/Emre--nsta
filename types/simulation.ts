@@ -13,7 +13,21 @@ export interface SimulationProfile {
   overrides: Record<OverrideKey, number>;
   /** Scenario-wide growth rate in percent (0 = none). Explicit overrides win over it. */
   growthPercent?: number;
+  /**
+   * "Etkileşimi artır" dials: one percentage per engagement family (followers, plays,
+   * views, likes, comments). A dial wins over `growthPercent` for the metrics it drives;
+   * explicit overrides still win over both.
+   */
+  boosts?: BoostMap;
 }
+
+/** Engagement families a user can raise one by one. */
+export type BoostKey = 'followers' | 'plays' | 'views' | 'likes' | 'comments';
+
+export const BOOST_KEYS: readonly BoostKey[] = ['followers', 'plays', 'views', 'likes', 'comments'];
+
+/** Percent per dial; a missing key means "not set" (the growth rate applies instead). */
+export type BoostMap = Partial<Record<BoostKey, number>>;
 
 export interface SimulatedMedia {
   id: string;
@@ -57,6 +71,8 @@ export const SIMULATABLE_MEDIA_METRICS: readonly MetricKey[] = [
   'saves',
   'interactions',
   'follows_from_post',
+  'reposts',
+  'profile_visits',
 ];
 
 export function overrideKey(scope: SimulationScope, metric: MetricKey): OverrideKey {

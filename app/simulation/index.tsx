@@ -12,6 +12,7 @@ import { PromptSheet } from '@/components/common/PromptSheet';
 import { Screen } from '@/components/common/Screen';
 import { Text } from '@/components/common/Text';
 import { CheckIcon, ChevronRightIcon, EditIcon, FlaskIcon, ImageIcon, InsightsIcon, PlusSquareIcon } from '@/components/icons';
+import { EngagementBoostEditor } from '@/components/simulation/EngagementBoostEditor';
 import { GrowthRateEditor } from '@/components/simulation/GrowthRateEditor';
 import { ModeSwitch } from '@/components/simulation/ModeSwitch';
 import { SimulationBadge, SimulationBanner } from '@/components/simulation/SimulationBadge';
@@ -31,6 +32,7 @@ import {
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
+import { countBoosts } from '@/services/simulation/boost';
 import { countOverrides, useSimulationStore } from '@/store/simulationStore';
 import type { AppMetric } from '@/types/app';
 import { SIMULATABLE_ACCOUNT_METRICS } from '@/types/simulation';
@@ -126,7 +128,7 @@ export default function SimulationLabScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scenarios}>
           {scenarios.map((s) => {
             const isActive = s.id === active?.id;
-            const n = Object.keys(s.overrides).length;
+            const n = Object.keys(s.overrides).length + countBoosts(s.boosts) + ((s.growthPercent ?? 0) !== 0 ? 1 : 0);
             return (
               <Pressable
                 key={s.id}
@@ -151,6 +153,12 @@ export default function SimulationLabScreen() {
             );
           })}
         </ScrollView>
+
+        {/* Engagement boost — followers, plays, views, likes, comments; one dial each */}
+        <SectionTitle title={t('boost.title')} />
+        <Card style={styles.card} tone={indicators ? 'simulation' : 'default'}>
+          <EngagementBoostEditor compact />
+        </Card>
 
         {/* Growth rate — one percentage drives every metric */}
         <SectionTitle title={t('growthRate.title')} />

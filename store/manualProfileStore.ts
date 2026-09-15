@@ -1,8 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { AppAccount, AppMedia } from '@/types/app';
+
+import { durableStorage, hydrationHandler, isRecord, isString } from './persistence';
 
 /**
  * Profiles built entirely by hand on the device (no Instagram involved).
@@ -28,6 +29,12 @@ interface ManualProfileState {
   removeRecentPublic: (username: string) => void;
   setHydrated: (value: boolean) => void;
 }
+
+function isManualProfile(value: unknown): value is ManualProfile {
+  return isRecord(value) && isString(value.id) && isRecord(value.account) && isString(value.account.username) && Array.isArray(value.media);
+}
+
+const hydration = hydrationHandler<ManualProfileState>();
 
 export const useManualProfileStore = create<ManualProfileState>()(
   persist(
@@ -88,11 +95,19 @@ export const useManualProfileStore = create<ManualProfileState>()(
     }),
     {
       name: 'sociallens.manual.v1',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => durableStorage),
       partialize: (state) => ({ profiles: state.profiles, recentPublicUsernames: state.recentPublicUsernames }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHydrated(true);
+      merge: (persisted, current) => {
+        const saved = isRecord(persisted) ? persisted : {};
+        const profiles: Record<string, ManualProfile> = {};
+        if (isRecord(saved.profiles)) {
+          for (const [id, value] of Object.entries(saved.profiles)) if (isManualProfile(value)) profiles[id] = value;
+        }
+        const recent = Array.isArray(saved.recentPublicUsernames) ? saved.recentPublicUsernames.filter(isString).slice(0, 20) : current.recentPublicUsernames;
+        return { ...current, profiles, recentPublicUsernames: recent };
       },
+      onRehydrateStorage: hydration.onRehydrateStorage,
     },
   ),
 );
+hydration.attach(useManualProfileStore);

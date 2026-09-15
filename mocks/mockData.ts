@@ -24,6 +24,8 @@ const avatar = (seed: string, size = 256) => `https://picsum.photos/seed/${seed}
 const photo = (seed: string, w = 1080, h = 1350) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
 
 export const MOCK_USERNAME = 'zmtprefabrik';
+/** Instagram "note" bubble above the avatar on your own profile. */
+export const MOCK_NOTE = 'Yeni projeler yolda 🏗️';
 
 export const mockAccount: AppAccount = {
   id: '17841400000000001',
@@ -62,6 +64,18 @@ interface MediaSeed {
   pinned?: boolean;
   performance: number; // 0.5 .. 2.5 multiplier used for insights
 }
+
+/**
+ * Sample clips for the demo reels (10-second Blender open-movie excerpts from test-videos.co.uk,
+ * ~1–2 MB each) so the video path can be seen without a real Instagram account.
+ */
+const SAMPLE_VIDEOS = [
+  'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_2MB.mp4',
+  'https://test-videos.co.uk/vids/sintel/mp4/h264/720/Sintel_720_10s_2MB.mp4',
+  'https://test-videos.co.uk/vids/jellyfish/mp4/h264/360/Jellyfish_360_10s_1MB.mp4',
+  'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4',
+  'https://test-videos.co.uk/vids/sintel/mp4/h264/360/Sintel_360_10s_1MB.mp4',
+];
 
 /** "Artist · Song" lines shown under the username on reels (like Instagram's audio attribution). */
 const REEL_AUDIO = ['zmtprefabrik · Orijinal ses', 'Kenan Doğulu · Tutamıyorum Zamanı', 'Duman · Senden Daha Güzel', 'zmtprefabrik · Orijinal ses', 'Sezen Aksu · Kaybolan Yıllar', 'Tarkan · Kuzu Kuzu', 'zmtprefabrik · Orijinal ses', 'Mabel Matiz · Ya Bu İşler Ne', 'Ceza · Suspus'];
@@ -127,6 +141,8 @@ export const mockMedia: AppMedia[] = MEDIA_SEEDS.map((seed, index) => {
     likeCount: seed.likes,
     commentCount: seed.comments,
     viewCount: seed.views,
+    videoUrl: isVertical ? SAMPLE_VIDEOS[index % SAMPLE_VIDEOS.length] : undefined,
+    durationSec: isVertical ? 10 : undefined,
     children,
     username: MOCK_USERNAME,
     ownerAvatarUrl: mockAccount.profilePictureUrl,

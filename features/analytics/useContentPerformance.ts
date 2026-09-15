@@ -5,27 +5,35 @@ import {
   mediaScope,
   resolveWithGrowth,
   syntheticInsightForSimulated,
+  useBoosts,
   useGrowthPercent,
   useOverrides,
   useSimulationEnabled,
 } from '@/features/simulation/useSimulation';
 import { buildPerformance, type ContentPerformance } from '@/services/analytics/content';
+import { estimateReposts } from '@/services/analytics/postInsights';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { AppAccount, AppMedia, AppMediaInsight } from '@/types/app';
-import { overrideKey, type OverrideKey } from '@/types/simulation';
+import { overrideKey, type BoostMap, type OverrideKey } from '@/types/simulation';
 
-/** Applies per-post overrides and the scenario growth rate to an insight (returns a new object; never mutates). */
+/** Applies per-post overrides, the engagement dials and the scenario growth rate to an insight (returns a new object; never mutates). */
 export function applyMediaOverrides(
   insight: AppMediaInsight | undefined,
   overrides: Record<OverrideKey, number>,
   enabled: boolean,
   growthPercent = 0,
+  boosts?: BoostMap,
 ): AppMediaInsight | undefined {
   if (!insight || !enabled) return insight;
   const scope = mediaScope(insight.mediaId);
   let changed = false;
-  const metrics = insight.metrics.map((m) => {
-    const resolved = resolveWithGrowth(scope, m.key, m.value, overrides, enabled, growthPercent);
+  // Reposts get their own seed like every other metric, so the content tab and the
+  // post-insights screen resolve them to the same number.
+  const base = insight.metrics.some((m) => m.key === 'reposts')
+    ? insight.metrics
+    : [...insight.metrics, { key: 'reposts' as const, value: estimateReposts(insight.mediaId, insight.metrics.find((m) => m.key === 'shares')?.value ?? 0), source: 'estimated' as const }];
+  const metrics = base.map((m) => {
+    const resolved = resolveWithGrowth(scope, m.key, m.value, overrides, enabled, growthPercent, boosts);
     if (!resolved.isSimulated) return m;
     changed = true;
     return { ...m, value: resolved.displayValue, source: 'manual' as const };
@@ -56,6 +64,7 @@ export function useContentPerformance(media: readonly AppMedia[], account: AppAc
   const batch = useMediaInsightsBatch(ids);
   const overrides = useOverrides();
   const growth = useGrowthPercent();
+  const boosts = useBoosts();
   const switchOn = useSimulationEnabled();
   const enabled = (switchOn || options.forceSimulation === true) && applySimulation;
   const formula = useSettingsStore((s) => s.engagementFormula);
@@ -65,17 +74,17 @@ export function useContentPerformance(media: readonly AppMedia[], account: AppAc
     const denominator = (perf: { reach: number }) => (formula === 'reach' ? perf.reach : followers);
     return media.map((m) => {
       if (m.isSimulated) {
-        return buildPerformance(m, applyMediaOverrides(syntheticInsightForSimulated(m), overrides, enabled, growth), denominator);
+        return buildPerformance(m, applyMediaOverrides(syntheticInsightForSimulated(m), overrides, enabled, growth, boosts), denominator);
       }
-      return buildPerformance(m, applyMediaOverrides(batch.byId[m.id], overrides, enabled, growth), denominator);
+      return buildPerformance(m, applyMediaOverrides(batch.byId[m.id], overrides, enabled, growth, boosts), denominator);
     });
-  }, [media, batch.byId, overrides, enabled, growth, formula, followers]);
+  }, [media, batch.byId, overrides, enabled, growth, boosts, formula, followers]);
 
   const insightsById = useMemo(() => {
     const out: Record<string, AppMediaInsight | undefined> = {};
-    for (const id of ids) out[id] = applyMediaOverrides(batch.byId[id], overrides, enabled, growth);
+    for (const id of ids) out[id] = applyMediaOverrides(batch.byId[id], overrides, enabled, growth, boosts);
     return out;
-  }, [ids, batch.byId, overrides, enabled, growth]);
+  }, [ids, batch.byId, overrides, enabled, growth, boosts]);
 
   return { items, insightsById, isLoading: batch.isLoading, isFetched: batch.isFetched };
 }

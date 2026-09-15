@@ -58,12 +58,18 @@ export function normalizeAccount(
 
 export function normalizeMedia(raw: InstagramApiMedia, username: string, source: DataSource = 'live'): AppMedia {
   const type = normalizeMediaType(raw.media_type, raw.media_product_type);
-  const children: AppMediaChild[] | undefined = raw.children?.data.map((child) => ({
-    id: child.id,
-    type: normalizeMediaType(child.media_type),
-    mediaUrl: child.media_url ?? child.thumbnail_url ?? '',
-    thumbnailUrl: child.thumbnail_url ?? child.media_url ?? '',
-  }));
+  const children: AppMediaChild[] | undefined = raw.children?.data.map((child) => {
+    const childType = normalizeMediaType(child.media_type);
+    return {
+      id: child.id,
+      type: childType,
+      mediaUrl: child.media_url ?? child.thumbnail_url ?? '',
+      thumbnailUrl: child.thumbnail_url ?? child.media_url ?? '',
+      // The Graph API's media_url for a video IS the mp4.
+      videoUrl: childType === 'VIDEO' || childType === 'REEL' ? child.media_url : undefined,
+    };
+  });
+  const isVideo = type === 'VIDEO' || type === 'REEL';
   const thumbnail = raw.thumbnail_url ?? (type === 'IMAGE' || type === 'CAROUSEL_ALBUM' ? raw.media_url : undefined) ?? children?.[0]?.thumbnailUrl ?? '';
   return {
     id: raw.id,
@@ -75,6 +81,7 @@ export function normalizeMedia(raw: InstagramApiMedia, username: string, source:
     timestamp: raw.timestamp,
     likeCount: raw.like_count ?? 0,
     commentCount: raw.comments_count ?? 0,
+    videoUrl: isVideo ? raw.media_url : undefined,
     children,
     username: raw.username ?? username,
     source,
@@ -105,6 +112,7 @@ const METRIC_NAME_MAP: Record<string, MetricKey> = {
   avg_watch_time: 'avg_watch_time',
   replays: 'replays',
   follows: 'follows_from_post',
+  reposts: 'reposts',
 };
 
 /** Unknown metric names are dropped instead of breaking the UI. */
@@ -145,6 +153,7 @@ export function normalizePublicMedia(node: PublicWebMediaNode, username: string,
     type: edge.node.is_video ? 'VIDEO' : 'IMAGE',
     mediaUrl: edge.node.display_url ?? image,
     thumbnailUrl: edge.node.display_url ?? image,
+    videoUrl: edge.node.is_video ? edge.node.video_url : undefined,
   }));
   const likes = estimated?.likeCount ?? node.edge_liked_by?.count ?? node.edge_media_preview_like?.count ?? 0;
   const viewCount = node.video_play_count ?? node.video_view_count ?? estimated?.viewCount;
@@ -290,6 +299,7 @@ export function applyEmbedDetails(media: AppMedia, embed: ParsedEmbed): AppMedia
     type: child.isVideo ? 'VIDEO' : 'IMAGE',
     mediaUrl: child.displayUrl ?? media.mediaUrl,
     thumbnailUrl: child.displayUrl ?? media.thumbnailUrl,
+    videoUrl: child.isVideo ? child.videoUrl : undefined,
   }));
   const isVideo = media.type === 'REEL' || media.type === 'VIDEO';
   return {

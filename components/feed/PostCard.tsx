@@ -8,15 +8,18 @@ import { Avatar } from '@/components/common/Avatar';
 import { IconButton } from '@/components/common/IconButton';
 import { Chip } from '@/components/common/Primitives';
 import { Text } from '@/components/common/Text';
-import { BookmarkIcon, CommentIcon, HeartIcon, MoreLinesIcon, MusicNoteIcon, MuteIcon, RepostIcon, ShareIcon, VerifiedIcon } from '@/components/icons';
-import { spacing } from '@/constants/theme';
+import { BookmarkIcon, CommentIcon, EyeIcon, HeartIcon, MoreLinesIcon, MusicNoteIcon, MuteIcon, RepostIcon, ShareIcon, SoundIcon, VerifiedIcon } from '@/components/icons';
+import { radius, spacing } from '@/constants/theme';
 import { useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
+import { usePlaybackStore } from '@/store/playbackStore';
 import type { AppMedia } from '@/types/app';
 import { formatPostDate } from '@/utils/date';
 import { formatCompact } from '@/utils/format';
+
+import { MediaVideo } from './MediaVideo';
 
 interface PostCardProps {
   media: AppMedia;
@@ -28,21 +31,41 @@ interface PostCardProps {
   onPressInsights?: (media: AppMedia) => void;
   /** Opens the comments sheet. Falls back to `onPress`. */
   onPressComments?: (media: AppMedia) => void;
+  /** "Gönderiyi Öne Çıkar" on your own posts. */
+  onPressPromote?: (media: AppMedia) => void;
   /** Shows Instagram's "Takip Et" pill next to the username (accounts you do not own). */
   showFollow?: boolean;
+  /**
+   * Your own post as Instagram shows it under "Gönderiler": the "👁 N · İstatistikleri gör"
+   * row with the promote button between the media and the action row.
+   */
+  own?: boolean;
+  /** View count for the own-post row (post insights); falls back to the media's public play count. */
+  viewCount?: number;
   /** Full caption (detail screen) instead of 2-line truncation. */
   expanded?: boolean;
-  /** Extra share count shown next to the share icon when the source knows it. */
+  /** Share (send) count shown next to the paper-plane icon when the source knows it. */
   shareCount?: number;
+  /** Small "liked by" facepile under the action row (only when the source has real likers). */
+  likerAvatars?: readonly string[];
+  /** Whether this card is the one on screen: only the active card mounts a video player. */
+  active?: boolean;
   simulated?: boolean;
 }
 
 const BLURHASH = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj';
+const PROMOTE_COLOR = '#4C5BF0';
 
 function clampAspect(ratio: number | undefined): number {
   // Instagram feed shows at most 4:5 (0.8) and at least 1.91:1
   const r = ratio ?? 0.8;
   return Math.min(1.91, Math.max(0.8, r));
+}
+
+interface Slide {
+  id: string;
+  uri: string;
+  videoUri?: string;
 }
 
 export const PostCard = memo(function PostCard({
@@ -53,9 +76,14 @@ export const PostCard = memo(function PostCard({
   onPressMore,
   onPressInsights,
   onPressComments,
+  onPressPromote,
   showFollow = false,
+  own = false,
+  viewCount,
   expanded = false,
   shareCount,
+  likerAvatars,
+  active = true,
   simulated,
 }: PostCardProps) {
   const { colors } = useTheme();
@@ -63,6 +91,8 @@ export const PostCard = memo(function PostCard({
   const language = useLanguage();
   const { width } = useWindowDimensions();
   const indicators = useSimulationIndicators();
+  const feedMuted = usePlaybackStore((s) => s.feedMuted);
+  const toggleFeedMuted = usePlaybackStore((s) => s.toggleFeedMuted);
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [page, setPage] = useState(0);
@@ -70,18 +100,22 @@ export const PostCard = memo(function PostCard({
   const heartScale = useSharedValue(0);
   const heartOpacity = useSharedValue(0);
   const likeBounce = useSharedValue(1);
-  const pagerRef = useRef<FlatList<{ id: string; uri: string; isVideo: boolean }>>(null);
+  const pagerRef = useRef<FlatList<Slide>>(null);
 
   const isVideo = media.type === 'VIDEO' || media.type === 'REEL';
-  const aspect = clampAspect(media.aspectRatio ?? (isVideo ? 0.8 : 0.8));
+  const aspect = clampAspect(media.aspectRatio ?? 0.8);
   const height = Math.round(width / aspect);
 
-  const slides = useMemo(() => {
+  const slides = useMemo<Slide[]>(() => {
     if (media.type === 'CAROUSEL_ALBUM' && media.children && media.children.length > 0) {
-      return media.children.map((c) => ({ id: c.id, uri: c.mediaUrl || c.thumbnailUrl, isVideo: c.type === 'VIDEO' }));
+      return media.children.map((c) => ({ id: c.id, uri: c.thumbnailUrl || c.mediaUrl, videoUri: c.videoUrl }));
     }
-    return [{ id: media.id, uri: media.mediaUrl || media.thumbnailUrl, isVideo }];
+    // A video's mediaUrl may itself be the mp4 (Graph API); the cover frame is always the thumbnail.
+    return [{ id: media.id, uri: isVideo ? media.thumbnailUrl || media.mediaUrl : media.mediaUrl || media.thumbnailUrl, videoUri: media.videoUrl }];
   }, [media, isVideo]);
+  const currentSlide = slides[page] ?? slides[0];
+  const playing = Boolean(active && currentSlide?.videoUri);
+  const hasVideo = slides.some((s) => Boolean(s.videoUri)) || isVideo;
 
   const showBigHeart = useCallback(() => {
     heartOpacity.value = 1;
@@ -105,6 +139,16 @@ export const PostCard = memo(function PostCard({
     likeBounce.value = withSequence(withTiming(0.8, { duration: 80 }), withSpring(1, { damping: 8, stiffness: 300 }));
   }, [likeBounce]);
 
+  // Instagram: a single tap on a playing feed video toggles the sound; on a photo it opens the post.
+  const onSingleTap = useCallback(() => {
+    if (playing) {
+      triggerHaptic('selection');
+      toggleFeedMuted();
+      return;
+    }
+    onPress?.(media);
+  }, [playing, toggleFeedMuted, onPress, media]);
+
   const doubleTap = useMemo(
     () =>
       Gesture.Tap()
@@ -124,9 +168,9 @@ export const PostCard = memo(function PostCard({
       Gesture.Tap()
         .numberOfTaps(1)
         .onEnd((_e, success) => {
-          if (success && onPress) runOnJS(onPress)(media);
+          if (success) runOnJS(onSingleTap)();
         }),
-    [onPress, media],
+    [onSingleTap],
   );
   const tapGesture = useMemo(() => Gesture.Exclusive(doubleTap, singleTap), [doubleTap, singleTap]);
 
@@ -142,9 +186,26 @@ export const PostCard = memo(function PostCard({
   };
 
   const likeCount = media.likeCount + (liked ? 1 : 0);
-  const reposts = shareCount ?? media.shareCount;
+  const shares = shareCount ?? media.shareCount;
+  const views = viewCount ?? media.viewCount;
   const caption = media.caption.trim();
   const captionTruncated = !expanded && !captionOpen && caption.length > 40;
+
+  const renderSlide = (slide: Slide, isCurrent: boolean) =>
+    slide.videoUri && active && isCurrent ? (
+      <MediaVideo media={media} uri={slide.videoUri} poster={slide.uri} width={width} height={height} muted={feedMuted} />
+    ) : (
+      <Image
+        source={{ uri: slide.uri }}
+        style={{ width, height }}
+        contentFit="cover"
+        transition={200}
+        placeholder={{ blurhash: BLURHASH }}
+        cachePolicy="memory-disk"
+        recyclingKey={slide.id}
+        accessibilityIgnoresInvertColors
+      />
+    );
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -203,30 +264,12 @@ export const PostCard = memo(function PostCard({
               getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
               initialNumToRender={2}
               windowSize={3}
-              renderItem={({ item }) => (
-                <Image
-                  source={{ uri: item.uri }}
-                  style={{ width, height }}
-                  contentFit="cover"
-                  transition={200}
-                  placeholder={{ blurhash: BLURHASH }}
-                  cachePolicy="memory-disk"
-                  recyclingKey={item.id}
-                  accessibilityIgnoresInvertColors
-                />
-              )}
+              extraData={`${page}:${active ? 1 : 0}:${feedMuted ? 1 : 0}`}
+              renderItem={({ item, index }) => renderSlide(item, index === page)}
             />
-          ) : (
-            <Image
-              source={{ uri: slides[0]?.uri }}
-              style={{ width, height }}
-              contentFit="cover"
-              transition={200}
-              placeholder={{ blurhash: BLURHASH }}
-              cachePolicy="memory-disk"
-              accessibilityIgnoresInvertColors
-            />
-          )}
+          ) : currentSlide ? (
+            renderSlide(currentSlide, true)
+          ) : null}
           {slides.length > 1 ? (
             <View style={styles.counter}>
               <Text variant="small" style={styles.counterText}>
@@ -234,10 +277,19 @@ export const PostCard = memo(function PostCard({
               </Text>
             </View>
           ) : null}
-          {isVideo ? (
-            <View style={styles.muteBadge} pointerEvents="none">
-              <MuteIcon size={16} color="#fff" />
-            </View>
+          {hasVideo ? (
+            <Pressable
+              onPress={() => {
+                triggerHaptic('selection');
+                toggleFeedMuted();
+              }}
+              hitSlop={8}
+              style={styles.muteBadge}
+              accessibilityRole="button"
+              accessibilityLabel={feedMuted ? t('feed.soundOn') : t('feed.soundOff')}
+            >
+              {feedMuted || !playing ? <MuteIcon size={16} color="#fff" /> : <SoundIcon size={16} color="#fff" />}
+            </Pressable>
           ) : null}
           <Animated.View style={[styles.bigHeart, bigHeartStyle]} pointerEvents="none">
             <HeartIcon filled color="#fff" size={96} />
@@ -245,33 +297,60 @@ export const PostCard = memo(function PostCard({
         </View>
       </GestureDetector>
 
-      {/* Actions */}
+      {/* Own post: "👁 531 · İstatistikleri gör" + "Gönderiyi Öne Çıkar" */}
+      {own ? (
+        <View style={styles.ownRow}>
+          <Pressable onPress={() => onPressInsights?.(media)} style={styles.insightsLink} accessibilityRole="button" accessibilityLabel={t('media.viewInsightsShort')}>
+            <EyeIcon size={18} color={colors.text} strokeWidth={1.8} />
+            <Text variant="feedStrong" style={{ marginLeft: 6 }} numberOfLines={1}>
+              {views !== undefined ? `${formatCompact(views, language)} · ` : ''}
+              {t('media.viewInsightsShort')}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onPressPromote?.(media)}
+            style={({ pressed }) => [styles.promote, { backgroundColor: PROMOTE_COLOR, opacity: pressed ? 0.85 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel={t('media.promote')}
+          >
+            <Text variant="feedStrong" style={styles.promoteText} numberOfLines={1}>
+              {t('media.promote')}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {/* Actions — counts sit next to the icons and only appear when there is something to count */}
       <View style={styles.actions}>
         <View style={styles.actionsLeft}>
           <Pressable onPress={toggleLike} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('metric.likes')} style={styles.actionItem}>
             <Animated.View style={likeIconStyle}>
-              <HeartIcon filled={liked} color={liked ? colors.like : colors.text} size={24} />
+              <HeartIcon filled={liked} color={liked ? colors.like : colors.text} size={26} strokeWidth={1.8} />
             </Animated.View>
-            <Text variant="feedStrong" style={styles.actionCount}>
-              {formatCompact(likeCount, language)}
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => (onPressComments ?? onPress)?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('metric.comments')} style={styles.actionItem}>
-            <CommentIcon color={colors.text} size={24} />
-            <Text variant="feedStrong" style={styles.actionCount}>
-              {formatCompact(media.commentCount, language)}
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => onPressInsights?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('metric.shares')} style={styles.actionItem}>
-            <RepostIcon color={colors.text} size={24} />
-            {reposts !== undefined ? (
+            {likeCount > 0 ? (
               <Text variant="feedStrong" style={styles.actionCount}>
-                {formatCompact(reposts, language)}
+                {formatCompact(likeCount, language)}
               </Text>
             ) : null}
           </Pressable>
+          <Pressable onPress={() => (onPressComments ?? onPress)?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('metric.comments')} style={styles.actionItem}>
+            <CommentIcon color={colors.text} size={26} strokeWidth={1.8} />
+            {media.commentCount > 0 ? (
+              <Text variant="feedStrong" style={styles.actionCount}>
+                {formatCompact(media.commentCount, language)}
+              </Text>
+            ) : null}
+          </Pressable>
+          <Pressable onPress={() => onPressInsights?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('feed.repost')} style={styles.actionItem}>
+            <RepostIcon color={colors.text} size={26} strokeWidth={1.8} />
+          </Pressable>
           <Pressable onPress={() => onPressInsights?.(media)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('common.share')} style={styles.actionItem}>
-            <ShareIcon color={colors.text} size={24} />
+            <ShareIcon color={colors.text} size={26} strokeWidth={1.8} />
+            {shares !== undefined && shares > 0 ? (
+              <Text variant="feedStrong" style={styles.actionCount}>
+                {formatCompact(shares, language)}
+              </Text>
+            ) : null}
           </Pressable>
         </View>
         {slides.length > 1 ? (
@@ -290,12 +369,21 @@ export const PostCard = memo(function PostCard({
           accessibilityRole="button"
           accessibilityLabel={t('metric.saves')}
         >
-          <BookmarkIcon filled={saved} color={colors.text} size={24} />
+          <BookmarkIcon filled={saved} color={colors.text} size={26} strokeWidth={1.8} />
         </Pressable>
       </View>
 
-      {/* Likes / views line */}
+      {/* Liked-by facepile, caption, date */}
       <View style={styles.meta}>
+        {likerAvatars && likerAvatars.length > 0 ? (
+          <View style={styles.facepile} accessibilityLabel={t('feed.liked')}>
+            {likerAvatars.slice(0, 3).map((uri, i) => (
+              <View key={`${uri}-${i}`} style={[styles.facepileItem, { borderColor: colors.background, marginLeft: i === 0 ? 0 : -8, zIndex: 3 - i }]}>
+                <Avatar uri={uri} size={22} />
+              </View>
+            ))}
+          </View>
+        ) : null}
         {caption ? (
           <Pressable onPress={() => (expanded ? undefined : setCaptionOpen((v) => !v))} accessibilityRole="text">
             <Text variant="feed" numberOfLines={captionTruncated ? 1 : undefined} style={styles.caption}>
@@ -319,7 +407,7 @@ export const PostCard = memo(function PostCard({
 
 const styles = StyleSheet.create({
   root: { paddingBottom: spacing.sm },
-  header: { flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md, paddingRight: spacing.xs, height: 52 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md, paddingRight: spacing.xs, height: 56 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   headerText: { marginLeft: spacing.sm + 2, flex: 1 },
   usernameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -330,13 +418,19 @@ const styles = StyleSheet.create({
   counterText: { color: '#fff', fontWeight: '600', fontSize: 12 },
   muteBadge: { position: 'absolute', bottom: spacing.md, right: spacing.md, width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
   bigHeart: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  ownRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.xs, gap: spacing.md },
+  insightsLink: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  promote: { paddingHorizontal: spacing.lg, paddingVertical: 9, borderRadius: radius.md },
+  promoteText: { color: '#fff' },
   actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingTop: spacing.sm + 2, paddingBottom: spacing.xs },
-  actionsLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: spacing.lg - 2 },
+  actionsLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: spacing.lg },
   actionItem: { flexDirection: 'row', alignItems: 'center' },
   actionCount: { marginLeft: 6 },
   dots: { position: 'absolute', left: 0, right: 0, top: spacing.sm + 8, flexDirection: 'row', justifyContent: 'center', gap: 4 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   meta: { paddingHorizontal: spacing.md, paddingTop: 2 },
+  facepile: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs, marginBottom: 2 },
+  facepileItem: { borderWidth: 2, borderRadius: 13 },
   caption: { marginTop: 2 },
   date: { marginTop: 4, fontSize: 12 },
 });
