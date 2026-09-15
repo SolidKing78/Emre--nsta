@@ -47,6 +47,5 @@ yarn-error.*
 # tests
 coverage/
 
-# supabase local — supabase/.env holds the Meta App Secret + token encryption key; never commit it
-supabase/.env
+# supabase local (supabase/.env is committed on purpose so the other machine has the same config)
 supabase/.temp/
