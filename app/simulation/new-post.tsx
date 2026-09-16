@@ -10,6 +10,7 @@ import { SegmentControl } from '@/components/common/SegmentControl';
 import { Screen } from '@/components/common/Screen';
 import { Text } from '@/components/common/Text';
 import { ImageIcon } from '@/components/icons';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { useSession } from '@/features/instagram/hooks';
 import { useSimulationActions } from '@/features/simulation/useSimulation';
@@ -159,6 +160,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: 48 },
   picker: { width: '60%', alignSelf: 'center', borderWidth: 1, borderStyle: 'dashed', borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   label: { marginTop: spacing.lg, marginBottom: spacing.xs },
-  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, fontSize: 15 },
+  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, fontSize: 15, ...fontStyles.regular },
   numbers: { flexDirection: 'row', gap: spacing.sm },
 });

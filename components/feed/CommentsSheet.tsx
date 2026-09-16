@@ -6,6 +6,7 @@ import { Avatar } from '@/components/common/Avatar';
 import { BottomSheet } from '@/components/common/BottomSheet';
 import { Text } from '@/components/common/Text';
 import { ChevronDownIcon, HeartIcon, ImageIcon, StickerIcon, VerifiedIcon } from '@/components/icons';
+import { fontStyles } from '@/constants/fonts';
 import { spacing } from '@/constants/theme';
 import { useAccount, useComments } from '@/features/instagram/hooks';
 import { triggerHaptic } from '@/hooks/useHaptics';
@@ -186,5 +187,5 @@ const styles = StyleSheet.create({
   emoji: { fontSize: 28, lineHeight: 34 },
   inputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg },
   inputBox: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: spacing.md, borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, height: 46, paddingHorizontal: spacing.lg },
-  input: { flex: 1, fontSize: 15, paddingVertical: 0, marginRight: spacing.sm },
+  input: { flex: 1, fontSize: 15, paddingVertical: 0, marginRight: spacing.sm, ...fontStyles.regular },
 });

@@ -40,6 +40,51 @@ export interface SimulatedMedia {
   viewCount?: number;
 }
 
+/**
+ * Who the stats say watched: the follower / non-follower split and the gender split.
+ * Percentages with one decimal, account-wide.
+ *
+ * Instagram's reach for an account that travels on Reels is almost entirely
+ * non-followers, so the defaults start at 0.7 % followers / 99.3 % non-followers and a
+ * 7 % / 93 % women-men split. `*Variance` is how far a single post may drift from the
+ * base — the drift is deterministic per post, so every video shows its own ratio (6/94,
+ * 5/95, 8/92 …) while the account as a whole keeps the configured mix.
+ */
+export interface AudienceMix {
+  /** Percent of viewers who follow the account. */
+  followerShare: number;
+  /** ± spread around `followerShare` for a single post. */
+  followerVariance: number;
+  /** Percent of the audience that is women. */
+  womenShare: number;
+  /** ± spread around `womenShare` for a single post. */
+  genderVariance: number;
+}
+
+export const DEFAULT_AUDIENCE_MIX: AudienceMix = {
+  followerShare: 0.7,
+  followerVariance: 0.4,
+  womenShare: 7,
+  genderVariance: 2,
+};
+
+/** Hand-set values for one post; a missing field follows the account-wide mix. */
+export interface MediaAudienceMix {
+  followerShare?: number;
+  womenShare?: number;
+}
+
+export type MediaAudienceMixMap = Record<string, MediaAudienceMix>;
+
+/**
+ * Hand-set percentages on the post insights screen, by dotted key — `factor.likes`,
+ * `source.reels`, `age.18-24`, `country.Türkiye`, `watch.end`, `engagement.peak`,
+ * `views.typical`. One flat map so a new chart never needs a new store field.
+ */
+export type MediaStatOverrides = Record<string, number>;
+
+export type MediaStatMap = Record<string, MediaStatOverrides>;
+
 export interface ProfileOverrides {
   name?: string;
   biography?: string;

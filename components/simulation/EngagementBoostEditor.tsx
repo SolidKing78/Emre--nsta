@@ -7,6 +7,7 @@ import { Button } from '@/components/common/Button';
 import { Divider } from '@/components/common/Primitives';
 import { Text } from '@/components/common/Text';
 import { ChevronDownIcon, ChevronRightIcon } from '@/components/icons';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { flattenMedia, useAccount, useAccountInsights, useMediaFeed } from '@/features/instagram/hooks';
 import { useBoosts, useGrowthPercent, useSimulationActions, useSimulationEnabled } from '@/features/simulation/useSimulation';
@@ -322,7 +323,7 @@ const styles = StyleSheet.create({
   editorHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   slider: { flex: 1, height: 40 },
   inputWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.sm + 2, height: 40, minWidth: 84 },
-  input: { flex: 1, fontSize: 16, fontWeight: '700', paddingVertical: 0, textAlign: 'right', marginRight: 2 },
+  input: { flex: 1, fontSize: 16, paddingVertical: 0, textAlign: 'right', marginRight: 2, ...fontStyles.bold },
   presets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   preset: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill },
   clearLink: { paddingVertical: spacing.md },

@@ -6,19 +6,28 @@ import { boostPercentFor } from '@/services/simulation/boost';
 import { resolveMetric, type ResolvedMetric } from '@/services/simulation/resolve';
 import { useSettingsStore } from '@/store/settingsStore';
 import {
+  countPostEdits,
   EMPTY_OVERRIDES,
   EMPTY_PROFILE_OVERRIDES,
   EMPTY_SIMULATED_MEDIA,
   selectActiveProfile,
+  selectAudienceMix,
   selectBoosts,
   selectGrowthPercent,
+  selectAccountStats,
+  selectMediaAudienceMix,
+  selectMediaStats,
   useSimulationStore,
 } from '@/store/simulationStore';
 import type { AppAccount, AppMedia, AppMediaInsight, AppMetric, MetricKey } from '@/types/app';
 import {
   overrideKey,
+  type AudienceMix,
   type BoostKey,
   type BoostMap,
+  type MediaAudienceMix,
+  type MediaAudienceMixMap,
+  type MediaStatOverrides,
   type OverrideKey,
   type ProfileOverrides,
   type SimulatedMedia,
@@ -86,6 +95,44 @@ export function useSimulatedMedia(): readonly SimulatedMedia[] {
   return useSimulationStore((s) => s.accounts[accountKey]?.simulatedMedia ?? EMPTY_SIMULATED_MEDIA);
 }
 
+/** Account-wide follower / non-follower and women / men splits. */
+export function useAudienceMix(): AudienceMix {
+  const accountKey = useAccountKey();
+  return useSimulationStore((s) => selectAudienceMix(s, accountKey));
+}
+
+/** Hand-set audience splits, by media id. */
+export function useMediaAudienceMixMap(): MediaAudienceMixMap {
+  const accountKey = useAccountKey();
+  return useSimulationStore((s) => selectMediaAudienceMix(s, accountKey));
+}
+
+/** Hand-set percentages on one post's insights screen (empty object when none). */
+export function useMediaStats(mediaId: string | undefined): MediaStatOverrides {
+  const accountKey = useAccountKey();
+  return useSimulationStore((s) => selectMediaStats(s, accountKey, mediaId ?? ''));
+}
+
+/**
+ * How many values the user pinned on a post — its numbers, its audience split and its
+ * percentages. Subscribing to the whole account slice is deliberate: the count has to move
+ * the moment any of the three does.
+ */
+export function usePostEditCount(): (mediaId: string) => number {
+  const accountKey = useAccountKey();
+  const account = useSimulationStore((s) => s.accounts[accountKey]);
+  return useCallback(
+    (mediaId: string) => (account ? countPostEdits(useSimulationStore.getState(), accountKey, mediaId) : 0),
+    [account, accountKey],
+  );
+}
+
+/** Hand-set percentages on the account insights screen. */
+export function useAccountStats(): MediaStatOverrides {
+  const accountKey = useAccountKey();
+  return useSimulationStore((s) => selectAccountStats(s, accountKey));
+}
+
 export function useProfileOverrides(): ProfileOverrides {
   const accountKey = useAccountKey();
   return useSimulationStore((s) => s.accounts[accountKey]?.profileOverrides ?? EMPTY_PROFILE_OVERRIDES);
@@ -127,6 +174,14 @@ export function useSimulationActions() {
       removeSimulatedMedia: (id: string) => store.getState().removeSimulatedMedia(accountKey, id),
       setProfileOverrides: (patch: ProfileOverrides) => store.getState().setProfileOverrides(accountKey, patch),
       clearProfileOverrides: () => store.getState().clearProfileOverrides(accountKey),
+      setAudienceMix: (patch: Partial<AudienceMix>) => store.getState().setAudienceMix(accountKey, patch),
+      resetAudienceMix: () => store.getState().resetAudienceMix(accountKey),
+      setMediaAudienceMix: (mediaId: string, patch: MediaAudienceMix) => store.getState().setMediaAudienceMix(accountKey, mediaId, patch),
+      clearMediaAudienceMix: (mediaId: string) => store.getState().clearMediaAudienceMix(accountKey, mediaId),
+      setMediaStat: (mediaId: string, key: string, value: number | undefined) => store.getState().setMediaStat(accountKey, mediaId, key, value),
+      clearMediaStats: (mediaId: string) => store.getState().clearMediaStats(accountKey, mediaId),
+      setAccountStat: (key: string, value: number | undefined) => store.getState().setAccountStat(accountKey, key, value),
+      clearAccountStats: () => store.getState().clearAccountStats(accountKey),
     }),
     [accountKey, store],
   );

@@ -4,7 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 
 import { Text } from '@/components/common/Text';
 import { ChevronDownIcon, InfoIcon } from '@/components/icons';
-import { radius, spacing } from '@/constants/theme';
+import { radius, spacing, touch } from '@/constants/theme';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage } from '@/i18n';
@@ -144,15 +144,28 @@ export function LegendDots({ items }: { items: { label: string; color: string }[
 /* ---------------- Horizontal bars (content type / demographics) ---------------- */
 
 export interface BarRow {
+  /** Stable id for the row; falls back to the label. */
+  key?: string;
   label: string;
   value: number;
   /** Optional split 0..1 rendered as the lighter tail of the bar. */
   split?: number;
   /** Format override (e.g. percent). */
   display?: string;
+  /** True while this row's value was set by hand — painted in the scenario colour. */
+  custom?: boolean;
 }
 
-export function InsightBars({ rows, max, colorA, colorB }: { rows: BarRow[]; max?: number; colorA?: string; colorB?: string }) {
+interface InsightBarsProps {
+  rows: BarRow[];
+  max?: number;
+  colorA?: string;
+  colorB?: string;
+  /** Long-press a bar to set its value by hand. */
+  onRowLongPress?: (row: BarRow, index: number) => void;
+}
+
+export function InsightBars({ rows, max, colorA, colorB, onRowLongPress }: InsightBarsProps) {
   const { colors } = useTheme();
   const language = useLanguage();
   const top = Math.max(1, max ?? Math.max(...rows.map((r) => r.value), 0));
@@ -160,11 +173,18 @@ export function InsightBars({ rows, max, colorA, colorB }: { rows: BarRow[]; max
   const b = colorB ?? colors.chartLineSoft;
   return (
     <View>
-      {rows.map((row) => {
+      {rows.map((row, index) => {
         const width = Math.min(100, (row.value / top) * 100);
         const splitWidth = row.split !== undefined ? width * Math.min(1, Math.max(0, row.split)) : width;
         return (
-          <View key={row.label} style={styles.barRow}>
+          <Pressable
+            key={row.key ?? row.label}
+            style={styles.barRow}
+            onLongPress={onRowLongPress ? () => onRowLongPress(row, index) : undefined}
+            delayLongPress={touch.longPressMs}
+            accessibilityRole={onRowLongPress ? 'button' : undefined}
+            accessibilityLabel={`${row.label} ${row.display ?? row.value}`}
+          >
             <Text variant="body" style={{ marginBottom: 6 }}>
               {row.label}
             </Text>
@@ -173,11 +193,11 @@ export function InsightBars({ rows, max, colorA, colorB }: { rows: BarRow[]; max
                 <View style={[styles.fill, { width: `${width}%`, backgroundColor: b }]} />
                 <View style={[styles.fill, { width: `${splitWidth}%`, backgroundColor: a }]} />
               </View>
-              <Text variant="bodyStrong" style={styles.barValue}>
+              <Text variant="bodyStrong" weight="700" color={row.custom ? 'simulation' : 'primary'} style={styles.barValue}>
                 {row.display ?? formatCompact(row.value, language)}
               </Text>
             </View>
-          </View>
+          </Pressable>
         );
       })}
     </View>
@@ -206,5 +226,5 @@ const styles = StyleSheet.create({
   barLine: { flexDirection: 'row', alignItems: 'center' },
   track: { flex: 1, height: 8, borderRadius: 4, overflow: 'hidden', position: 'relative' },
   fill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 4 },
-  barValue: { minWidth: 56, textAlign: 'right', marginLeft: spacing.md },
+  barValue: { minWidth: 62, textAlign: 'right', marginLeft: spacing.md },
 });

@@ -8,6 +8,7 @@ import { Chip } from '@/components/common/Primitives';
 import { Screen } from '@/components/common/Screen';
 import { Text } from '@/components/common/Text';
 import { CloseIcon, InfoIcon, SearchIcon } from '@/components/icons';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
@@ -142,7 +143,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
   subtitle: { marginBottom: spacing.xl },
   inputWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 50 },
-  input: { flex: 1, fontSize: 16, paddingVertical: 0 },
+  input: { flex: 1, fontSize: 16, paddingVertical: 0, ...fontStyles.regular },
   recent: { marginTop: spacing.xxl },
   recentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   hint: { flexDirection: 'row', alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.xxl },

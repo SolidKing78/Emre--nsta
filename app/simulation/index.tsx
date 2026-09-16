@@ -12,6 +12,7 @@ import { PromptSheet } from '@/components/common/PromptSheet';
 import { Screen } from '@/components/common/Screen';
 import { Text } from '@/components/common/Text';
 import { CheckIcon, ChevronRightIcon, EditIcon, FlaskIcon, ImageIcon, InsightsIcon, PlusSquareIcon } from '@/components/icons';
+import { AudienceMixEditor } from '@/components/simulation/AudienceMixEditor';
 import { EngagementBoostEditor } from '@/components/simulation/EngagementBoostEditor';
 import { GrowthRateEditor } from '@/components/simulation/GrowthRateEditor';
 import { ModeSwitch } from '@/components/simulation/ModeSwitch';
@@ -22,7 +23,7 @@ import {
   ACCOUNT_SCOPE,
   useActiveScenario,
   useDisplayMetrics,
-  useOverrides,
+  usePostEditCount,
   useScenarios,
   useSimulatedMedia,
   useSimulationActions,
@@ -33,7 +34,7 @@ import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
 import { countBoosts } from '@/services/simulation/boost';
-import { countOverrides, useSimulationStore } from '@/store/simulationStore';
+import { useSimulationStore } from '@/store/simulationStore';
 import type { AppMetric } from '@/types/app';
 import { SIMULATABLE_ACCOUNT_METRICS } from '@/types/simulation';
 import { buildDateRange } from '@/utils/date';
@@ -50,8 +51,8 @@ export default function SimulationLabScreen() {
   const actions = useSimulationActions();
   const scenarios = useScenarios();
   const active = useActiveScenario();
-  const overrides = useOverrides();
   const simulatedMedia = useSimulatedMedia();
+  const postOverrideCount = usePostEditCount();
   const [promptMode, setPromptMode] = useState<'new' | 'rename' | null>(newParam ? 'new' : null);
   const [scenarioMenu, setScenarioMenu] = useState<string | null>(null);
 
@@ -97,7 +98,6 @@ export default function SimulationLabScreen() {
     ]);
   };
 
-  const postOverrideCount = (mediaId: string) => countOverrides(overrides, `media:${mediaId}:`);
   const menuScenario = scenarios.find((s) => s.id === scenarioMenu);
 
   return (
@@ -164,6 +164,12 @@ export default function SimulationLabScreen() {
         <SectionTitle title={t('growthRate.title')} />
         <Card style={styles.card}>
           <GrowthRateEditor previewMetrics={baseMetrics} compact />
+        </Card>
+
+        {/* Audience mix — who the stats say is watching */}
+        <SectionTitle title={t('audienceMix.title')} />
+        <Card style={styles.card}>
+          <AudienceMixEditor compact />
         </Card>
 
         {/* Account metrics */}

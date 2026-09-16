@@ -1,14 +1,21 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { normalizeMix } from '@/services/analytics/audienceMix';
 import { normalizeBoosts } from '@/services/simulation/boost';
 import { clampGrowth } from '@/services/simulation/growth';
 import type { MetricKey } from '@/types/app';
 import {
+  DEFAULT_AUDIENCE_MIX,
   overrideKey,
   parseOverrideKey,
+  type AudienceMix,
   type BoostKey,
   type BoostMap,
+  type MediaAudienceMix,
+  type MediaAudienceMixMap,
+  type MediaStatMap,
+  type MediaStatOverrides,
   type OverrideKey,
   type ProfileOverrides,
   type SimulatedMedia,
@@ -32,6 +39,17 @@ interface AccountSimulation {
   activeProfileId: string;
   simulatedMedia: SimulatedMedia[];
   profileOverrides: ProfileOverrides;
+  /**
+   * Follower / non-follower and women / men splits. Account-wide rather than per
+   * scenario: it describes who the audience is, not how big a scenario makes it.
+   */
+  audienceMix: AudienceMix;
+  /** Hand-set splits for single posts, by media id. */
+  mediaAudienceMix: MediaAudienceMixMap;
+  /** Hand-set percentages on the post insights screen, by media id then dotted key. */
+  mediaStats: MediaStatMap;
+  /** Hand-set percentages on the account insights screen (age / city / country bars). */
+  accountStats: MediaStatOverrides;
 }
 
 interface SimulationState {
@@ -70,6 +88,20 @@ interface SimulationState {
   setProfileOverrides: (accountKey: string, patch: ProfileOverrides) => void;
   clearProfileOverrides: (accountKey: string) => void;
 
+  /** Account-wide audience splits; a patch merges into the current mix. */
+  setAudienceMix: (accountKey: string, patch: Partial<AudienceMix>) => void;
+  resetAudienceMix: (accountKey: string) => void;
+  /** Hand-set splits for one post; leaving a value out keeps what the post already had. */
+  setMediaAudienceMix: (accountKey: string, mediaId: string, patch: MediaAudienceMix) => void;
+  clearMediaAudienceMix: (accountKey: string, mediaId: string) => void;
+
+  /** One hand-set percentage on a post's insights (dotted key); `undefined` gives it back. */
+  setMediaStat: (accountKey: string, mediaId: string, key: string, value: number | undefined) => void;
+  clearMediaStats: (accountKey: string, mediaId: string) => void;
+  /** The same, for the account insights screen's own bars. */
+  setAccountStat: (accountKey: string, key: string, value: number | undefined) => void;
+  clearAccountStats: (accountKey: string) => void;
+
   clearAccount: (accountKey: string) => void;
 }
 
@@ -82,6 +114,10 @@ function createDefaultAccount(): AccountSimulation {
     activeProfileId: id,
     simulatedMedia: [],
     profileOverrides: {},
+    audienceMix: { ...DEFAULT_AUDIENCE_MIX },
+    mediaAudienceMix: {},
+    mediaStats: {},
+    accountStats: {},
   };
 }
 
@@ -94,7 +130,7 @@ function getAccount(state: SimulationState, accountKey: string): AccountSimulati
 /* ------------------------------------------------------------------ */
 
 /** Storage version; bump together with `migratePersisted` when the persisted shape changes. */
-export const SIMULATION_STORAGE_VERSION = 2;
+export const SIMULATION_STORAGE_VERSION = 5;
 
 type PersistedSimulation = Pick<SimulationState, 'enabled' | 'accounts' | 'lastChangedAt'>;
 
@@ -154,6 +190,41 @@ function sanitizeProfileOverrides(raw: unknown): ProfileOverrides {
   return out;
 }
 
+function sanitizeMediaAudienceMix(raw: unknown): MediaAudienceMixMap {
+  const out: MediaAudienceMixMap = {};
+  if (!isRecord(raw)) return out;
+  for (const [mediaId, value] of Object.entries(raw)) {
+    if (!mediaId || !isRecord(value)) continue;
+    const entry: MediaAudienceMix = {};
+    if (isFiniteNumber(value.followerShare)) entry.followerShare = Math.min(100, Math.max(0, value.followerShare));
+    if (isFiniteNumber(value.womenShare)) entry.womenShare = Math.min(100, Math.max(0, value.womenShare));
+    if (entry.followerShare !== undefined || entry.womenShare !== undefined) out[mediaId] = entry;
+  }
+  return out;
+}
+
+function sanitizeStatOverrides(raw: unknown): MediaStatOverrides {
+  const out: MediaStatOverrides = {};
+  if (!isRecord(raw)) return out;
+  for (const [key, percent] of Object.entries(raw)) {
+    // Keys are "<group>.<name>"; everything stored here is a percentage.
+    if (!/^[a-z]+\.[^.]+$/i.test(key) || !isFiniteNumber(percent)) continue;
+    out[key] = Math.min(1000, Math.max(0, percent));
+  }
+  return out;
+}
+
+function sanitizeMediaStats(raw: unknown): MediaStatMap {
+  const out: MediaStatMap = {};
+  if (!isRecord(raw)) return out;
+  for (const [mediaId, value] of Object.entries(raw)) {
+    if (!mediaId) continue;
+    const entry = sanitizeStatOverrides(value);
+    if (Object.keys(entry).length > 0) out[mediaId] = entry;
+  }
+  return out;
+}
+
 function sanitizeAccount(raw: unknown): AccountSimulation | null {
   if (!isRecord(raw)) return null;
   const profiles = (Array.isArray(raw.profiles) ? raw.profiles : []).map(sanitizeProfile).filter((p): p is SimulationProfile => p !== null);
@@ -165,6 +236,10 @@ function sanitizeAccount(raw: unknown): AccountSimulation | null {
     activeProfileId,
     simulatedMedia: sanitizeSimulatedMedia(raw.simulatedMedia),
     profileOverrides: sanitizeProfileOverrides(raw.profileOverrides),
+    audienceMix: normalizeMix(isRecord(raw.audienceMix) ? (raw.audienceMix as Partial<AudienceMix>) : undefined),
+    mediaAudienceMix: sanitizeMediaAudienceMix(raw.mediaAudienceMix),
+    mediaStats: sanitizeMediaStats(raw.mediaStats),
+    accountStats: sanitizeStatOverrides(raw.accountStats),
   };
 }
 
@@ -192,7 +267,7 @@ export function sanitizePersisted(raw: unknown): PersistedSimulation {
   return out;
 }
 
-/** v0/v1 → v2: same fields; the sanitizer fills in what older builds did not have (boosts, growth). */
+/** v0…v4 → v5: same fields; the sanitizer fills in what older builds did not have (boosts, growth, audience mix, post + account stats). */
 export function migratePersisted(raw: unknown, _fromVersion: number): PersistedSimulation {
   return sanitizePersisted(raw);
 }
@@ -268,6 +343,11 @@ export const useSimulationStore = create<SimulationState>()(
           };
         }),
 
+      /**
+       * "Tüm senaryoları sıfırla": the scenario's own edits *and* everything else the user
+       * can pin — the audience mix, per-post splits and every hand-set percentage. A reset
+       * that left half the screen simulated would be worse than no reset at all.
+       */
       resetAll: (accountKey) =>
         set((s) => {
           const account = getAccount(s, accountKey);
@@ -275,7 +355,13 @@ export const useSimulationStore = create<SimulationState>()(
             lastChangedAt: new Date().toISOString(),
             accounts: {
               ...s.accounts,
-              [accountKey]: updateActiveProfile(account, (p) => ({ ...p, overrides: {}, growthPercent: 0, boosts: {} })),
+              [accountKey]: {
+                ...updateActiveProfile(account, (p) => ({ ...p, overrides: {}, growthPercent: 0, boosts: {} })),
+                audienceMix: { ...DEFAULT_AUDIENCE_MIX },
+                mediaAudienceMix: {},
+                mediaStats: {},
+                accountStats: {},
+              },
             },
           };
         }),
@@ -463,6 +549,10 @@ export const useSimulationStore = create<SimulationState>()(
         set((s) => {
           const account = getAccount(s, accountKey);
           const prefix = `media:${mediaId}:`;
+          const mediaAudienceMix = { ...account.mediaAudienceMix };
+          delete mediaAudienceMix[mediaId];
+          const mediaStats = { ...account.mediaStats };
+          delete mediaStats[mediaId];
           return {
             accounts: {
               ...s.accounts,
@@ -472,6 +562,8 @@ export const useSimulationStore = create<SimulationState>()(
                   return { ...p, overrides };
                 }),
                 simulatedMedia: account.simulatedMedia.filter((m) => m.id !== mediaId),
+                mediaAudienceMix,
+                mediaStats,
               },
             },
           };
@@ -493,6 +585,104 @@ export const useSimulationStore = create<SimulationState>()(
         set((s) => {
           const account = getAccount(s, accountKey);
           return { accounts: { ...s.accounts, [accountKey]: { ...account, profileOverrides: {} } } };
+        }),
+
+      setAudienceMix: (accountKey, patch) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: {
+              ...s.accounts,
+              [accountKey]: { ...account, audienceMix: normalizeMix({ ...account.audienceMix, ...patch }) },
+            },
+          };
+        }),
+
+      resetAudienceMix: (accountKey) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: {
+              ...s.accounts,
+              [accountKey]: { ...account, audienceMix: { ...DEFAULT_AUDIENCE_MIX }, mediaAudienceMix: {} },
+            },
+          };
+        }),
+
+      setMediaAudienceMix: (accountKey, mediaId, patch) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          const next: MediaAudienceMix = { ...account.mediaAudienceMix[mediaId], ...patch };
+          if (next.followerShare !== undefined) next.followerShare = Math.min(100, Math.max(0, next.followerShare));
+          if (next.womenShare !== undefined) next.womenShare = Math.min(100, Math.max(0, next.womenShare));
+          const mediaAudienceMix = { ...account.mediaAudienceMix };
+          // An entry with nothing set is the same as no entry: the post follows the mix again.
+          if (next.followerShare === undefined && next.womenShare === undefined) delete mediaAudienceMix[mediaId];
+          else mediaAudienceMix[mediaId] = next;
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: { ...s.accounts, [accountKey]: { ...account, mediaAudienceMix } },
+          };
+        }),
+
+      clearMediaAudienceMix: (accountKey, mediaId) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          const mediaAudienceMix = { ...account.mediaAudienceMix };
+          delete mediaAudienceMix[mediaId];
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: { ...s.accounts, [accountKey]: { ...account, mediaAudienceMix } },
+          };
+        }),
+
+      setMediaStat: (accountKey, mediaId, key, value) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          const entry = { ...account.mediaStats[mediaId] };
+          if (value === undefined || !Number.isFinite(value)) delete entry[key];
+          else entry[key] = Math.min(1000, Math.max(0, value));
+          const mediaStats = { ...account.mediaStats };
+          if (Object.keys(entry).length === 0) delete mediaStats[mediaId];
+          else mediaStats[mediaId] = entry;
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: { ...s.accounts, [accountKey]: { ...account, mediaStats } },
+          };
+        }),
+
+      clearMediaStats: (accountKey, mediaId) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          const mediaStats = { ...account.mediaStats };
+          delete mediaStats[mediaId];
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: { ...s.accounts, [accountKey]: { ...account, mediaStats } },
+          };
+        }),
+
+      setAccountStat: (accountKey, key, value) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          const accountStats = { ...account.accountStats };
+          if (value === undefined || !Number.isFinite(value)) delete accountStats[key];
+          else accountStats[key] = Math.min(1000, Math.max(0, value));
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: { ...s.accounts, [accountKey]: { ...account, accountStats } },
+          };
+        }),
+
+      clearAccountStats: (accountKey) =>
+        set((s) => {
+          const account = getAccount(s, accountKey);
+          return {
+            lastChangedAt: new Date().toISOString(),
+            accounts: { ...s.accounts, [accountKey]: { ...account, accountStats: {} } },
+          };
         }),
 
       clearAccount: (accountKey) =>
@@ -544,6 +734,32 @@ export function selectBoosts(state: SimulationState, accountKey: string): BoostM
   return selectActiveProfile(state, accountKey).boosts ?? EMPTY_BOOSTS;
 }
 
+export function selectAudienceMix(state: SimulationState, accountKey: string): AudienceMix {
+  return state.accounts[accountKey]?.audienceMix ?? DEFAULT_AUDIENCE_MIX;
+}
+
+export function selectMediaAudienceMix(state: SimulationState, accountKey: string): MediaAudienceMixMap {
+  return state.accounts[accountKey]?.mediaAudienceMix ?? EMPTY_MEDIA_AUDIENCE_MIX;
+}
+
+export function selectMediaStats(state: SimulationState, accountKey: string, mediaId: string): MediaStatOverrides {
+  return state.accounts[accountKey]?.mediaStats?.[mediaId] ?? EMPTY_MEDIA_STATS;
+}
+
+export function selectAccountStats(state: SimulationState, accountKey: string): MediaStatOverrides {
+  return state.accounts[accountKey]?.accountStats ?? EMPTY_MEDIA_STATS;
+}
+
+/** How many values the user pinned on a post: counts, its splits and its percentages. */
+export function countPostEdits(state: SimulationState, accountKey: string, mediaId: string): number {
+  const account = state.accounts[accountKey];
+  if (!account) return 0;
+  const counts = countOverrides(activeProfile(account).overrides, `media:${mediaId}:`);
+  const splits = Object.keys(account.mediaAudienceMix[mediaId] ?? {}).length;
+  const percentages = Object.keys(account.mediaStats[mediaId] ?? {}).length;
+  return counts + splits + percentages;
+}
+
 export function countOverrides(overrides: Record<OverrideKey, number>, prefix?: string): number {
   return Object.keys(overrides).filter((k) => (prefix ? k.startsWith(prefix) : true)).length;
 }
@@ -552,3 +768,5 @@ export const EMPTY_OVERRIDES: Record<OverrideKey, number> = Object.freeze({}) as
 export const EMPTY_BOOSTS: BoostMap = Object.freeze({}) as BoostMap;
 export const EMPTY_SIMULATED_MEDIA: readonly SimulatedMedia[] = Object.freeze([]);
 export const EMPTY_PROFILE_OVERRIDES: ProfileOverrides = Object.freeze({});
+export const EMPTY_MEDIA_AUDIENCE_MIX: MediaAudienceMixMap = Object.freeze({}) as MediaAudienceMixMap;
+export const EMPTY_MEDIA_STATS: MediaStatOverrides = Object.freeze({}) as MediaStatOverrides;

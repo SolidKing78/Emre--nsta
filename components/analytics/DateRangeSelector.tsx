@@ -5,6 +5,7 @@ import { BottomSheet } from '@/components/common/BottomSheet';
 import { Button } from '@/components/common/Button';
 import { SegmentControl } from '@/components/common/SegmentControl';
 import { Text } from '@/components/common/Text';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
@@ -145,5 +146,5 @@ const styles = StyleSheet.create({
   quick: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill },
   inputs: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
   inputCol: { flex: 1 },
-  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 44, marginTop: spacing.xs, fontSize: 15 },
+  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 44, marginTop: spacing.xs, fontSize: 15, ...fontStyles.regular },
 });

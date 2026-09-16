@@ -1,38 +1,60 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
-import { RetentionChart } from '@/components/analytics/RetentionChart';
+import { FactorList } from '@/components/analytics/insights/FactorList';
 import { ChipRow, InsightBars, SectionHeading, TopTabs } from '@/components/analytics/insights/primitives';
-import { LineChart } from '@/components/charts/LineChart';
+import { ComparisonChart } from '@/components/charts/ComparisonChart';
+import { PlaybackChart } from '@/components/charts/PlaybackChart';
 import { AppHeader } from '@/components/common/AppHeader';
 import { BottomSheet } from '@/components/common/BottomSheet';
-import { IconButton } from '@/components/common/IconButton';
-import { Divider, ListRow, ToggleRow } from '@/components/common/Primitives';
+import { Button } from '@/components/common/Button';
+import { Chip, Divider, ListRow, ToggleRow } from '@/components/common/Primitives';
 import { Screen } from '@/components/common/Screen';
 import { ErrorState } from '@/components/common/States';
 import { StatCounter } from '@/components/common/StatCounter';
 import { Text } from '@/components/common/Text';
-import { BookmarkIcon, CommentIcon, HeartIcon, InfoIcon, RepostIcon, ShareIcon, TrendUpIcon } from '@/components/icons';
+import { MediaVideo } from '@/components/feed/MediaVideo';
+import { BookmarkIcon, ChevronRightIcon, CommentIcon, HeartIcon, InfoIcon, MoreIcon, RepostIcon, ShareIcon, TrendUpIcon } from '@/components/icons';
+import { AudienceMixSheet } from '@/components/simulation/AudienceMixEditor';
 import { EngagementBoostSheet } from '@/components/simulation/EngagementBoostEditor';
 import { useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
+import { StatPercentSheet, type StatEdit } from '@/components/simulation/StatPercentSheet';
 import { radius, spacing, touch } from '@/constants/theme';
-import { useAudience } from '@/features/instagram/hooks';
+import { useEffectiveAudience, usePostAudienceSplits } from '@/features/analytics/useAudienceSplits';
 import { useMediaDetail } from '@/features/instagram/useMediaDetail';
-import { useDisplayMetrics, useSimulationActions, useSimulationEnabled, useSimulationIndicators, type DisplayMetric } from '@/features/simulation/useSimulation';
+import {
+  useAudienceMix,
+  useDisplayMetrics,
+  useMediaAudienceMixMap,
+  useMediaStats,
+  useSimulationActions,
+  useSimulationEnabled,
+  useSimulationIndicators,
+  type DisplayMetric,
+} from '@/features/simulation/useSimulation';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT, type TranslationKey } from '@/i18n';
-import { buildPostBreakdown, buildPostViewSeries, completePostMetrics } from '@/services/analytics/postInsights';
+import { buildPostBreakdown, completePostMetrics } from '@/services/analytics/postInsights';
+import {
+  applyBucketOverrides,
+  buildEngagementCurve,
+  buildViewFactors,
+  buildViewsOverTime,
+  buildWatchCurve,
+  durationOf,
+  statKey,
+} from '@/services/analytics/reelInsights';
 import type { AppMetric, MetricKey } from '@/types/app';
 import { SIMULATABLE_MEDIA_METRICS } from '@/types/simulation';
-import { formatPercent, formatWatchTime } from '@/utils/format';
+import { formatShare, formatWatchTime } from '@/utils/format';
 
 type Tab = 'overview' | 'engagement' | 'audience';
 type AudienceChip = 'age' | 'country' | 'gender';
 type ViewerChip = 'all' | 'followers' | 'nonFollowers';
-type InfoKey = 'summary' | 'sources' | 'viewsOverTime' | 'actions' | 'interactions' | 'viewers' | 'audience';
+type InfoKey = 'summary' | 'sources' | 'viewsOverTime' | 'actions' | 'interactions' | 'viewers' | 'audience' | 'factors' | 'watchTime' | 'engagementTiming';
 
 const AGE_ORDER = ['13-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+'];
 const INFO_TEXT: Record<InfoKey, TranslationKey> = {
@@ -43,14 +65,24 @@ const INFO_TEXT: Record<InfoKey, TranslationKey> = {
   interactions: 'postInsights.infoInteractions',
   viewers: 'postInsights.infoViewers',
   audience: 'postInsights.infoAudience',
+  factors: 'postInsights.infoFactors',
+  watchTime: 'postInsights.infoWatchTime',
+  engagementTiming: 'postInsights.infoEngagementTiming',
 };
 
 /**
- * Instagram "Gönderi istatistikleri" / "Reels videosu istatistikleri": thumbnail,
- * the five action counts, then Genel Bakış / Etkileşim / Hedef Kitle. Every number
- * is a scenario display value (dials + growth rate + explicit edits): long-press any
- * of them to edit. The header carries only Instagram's 📈 (account insights); a
- * long-press on it opens the scenario tools, so the screen itself stays 1:1.
+ * Instagram "Gönderi istatistikleri" / "Reels videosu istatistikleri", section for section:
+ * thumbnail, the five action counts, then Genel Bakış / Etkileşim / Hedef Kitle.
+ *
+ * Genel Bakış carries the summary cards, the cumulative view curve against a typical post,
+ * the rates that drove the reach, the watch-time curve and the view sources; Etkileşim the
+ * two count lists and when people interacted; Hedef Kitle the follower split and the
+ * age / country / gender bars.
+ *
+ * **Every number is editable.** Counts go through the scenario overlay (long-press → the
+ * metric editor); percentages — factor rates, view sources, age and country bars, the
+ * curves' shape — are per-post overrides (long-press → the percentage sheet). The header
+ * carries Instagram's 📈 and ⋯; ⋯ opens the scenario tools.
  */
 export default function PostInsightsScreen() {
   const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
@@ -69,29 +101,62 @@ export default function PostInsightsScreen() {
   const [info, setInfo] = useState<InfoKey | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [boostOpen, setBoostOpen] = useState(false);
+  const [audienceOpen, setAudienceOpen] = useState(false);
+  const [statEdit, setStatEdit] = useState<StatEdit | null>(null);
+  const [promoteOpen, setPromoteOpen] = useState(false);
 
   const detail = useMediaDetail(id);
-  const audienceQuery = useAudience();
+  const audience = useEffectiveAudience();
+  const mix = useAudienceMix();
+  const mediaAudienceMix = useMediaAudienceMixMap();
   const media = detail.media;
   const realMedia = detail.realMedia;
+  const mediaId = media?.id ?? id;
+  const stats = useMediaStats(mediaId);
   const isReel = media?.type === 'REEL' || media?.type === 'VIDEO';
 
-  // Source metrics + deterministic fill-ins (+ the daily view series) → scenario overlay.
-  const breakdown = useMemo(() => (realMedia ? buildPostBreakdown(realMedia, audienceQuery.data) : null), [realMedia, audienceQuery.data]);
-  const baseMetrics = useMemo<AppMetric[]>(() => {
-    if (!realMedia) return [];
-    return completePostMetrics(realMedia, detail.realInsight).map((m) => (m.key === 'views' ? { ...m, series: buildPostViewSeries(realMedia, m.value) } : m));
-  }, [realMedia, detail.realInsight]);
+  // Source metrics + deterministic fill-ins → scenario overlay.
+  const splits = usePostAudienceSplits(mediaId);
+  const baseMetrics = useMemo<AppMetric[]>(() => (realMedia ? completePostMetrics(realMedia, detail.realInsight) : []), [realMedia, detail.realInsight]);
   const metrics = useDisplayMetrics(detail.scope, baseMetrics);
   const byKey = (key: MetricKey): DisplayMetric | undefined => metrics.find((m) => m.key === key);
-  const audience = audienceQuery.data ?? null;
 
-  const viewSeries = useMemo(() => {
-    const series = byKey('views')?.series ?? [];
-    const share = viewerChip === 'all' ? 1 : viewerChip === 'followers' ? (breakdown?.followerShare ?? 100) / 100 : (breakdown?.nonFollowerShare ?? 0) / 100;
-    return series.map((p) => ({ date: p.date, value: Math.round(p.value * share) }));
+  const values = useMemo(() => Object.fromEntries(metrics.map((m) => [m.key, m.value])) as Partial<Record<MetricKey, number>>, [metrics]);
+  const factors = useMemo(() => (realMedia ? buildViewFactors(realMedia, values, stats) : []), [realMedia, values, stats]);
+  const viewsOverTime = useMemo(() => (realMedia ? buildViewsOverTime(realMedia, values.views ?? 0, stats) : null), [realMedia, values.views, stats]);
+  const durationSec = realMedia ? durationOf(realMedia, values.avg_watch_time) : 30;
+  const watchCurve = useMemo(
+    () => (realMedia ? buildWatchCurve(realMedia, durationSec, detail.realInsight?.retention, stats) : null),
+    [realMedia, durationSec, detail.realInsight?.retention, stats],
+  );
+  const engagementCurve = useMemo(() => (realMedia ? buildEngagementCurve(realMedia, durationSec, stats) : null), [realMedia, durationSec, stats]);
+
+  const breakdown = useMemo(
+    () => (realMedia ? buildPostBreakdown(realMedia, mix, mediaAudienceMix[realMedia.id]) : null),
+    [realMedia, mix, mediaAudienceMix],
+  );
+  const sources = useMemo(() => {
+    if (!breakdown) return [];
+    return applyBucketOverrides(
+      breakdown.sources.map((s) => ({ key: s.key, label: t(`postInsights.source.${s.key}`), percent: s.share })),
+      'source',
+      stats,
+    ).sort((a, b) => b.percent - a.percent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metrics, viewerChip, breakdown]);
+  }, [breakdown, stats, language]);
+
+  const ages = useMemo(() => {
+    if (!audience) return [];
+    const ordered = [...audience.ages].sort((a, b) => AGE_ORDER.indexOf(a.label) - AGE_ORDER.indexOf(b.label));
+    return applyBucketOverrides(ordered.map((a) => ({ key: a.label, label: a.label, percent: a.value })), 'age', stats);
+  }, [audience, stats]);
+  const countries = useMemo(() => {
+    if (!audience) return [];
+    return applyBucketOverrides(audience.countries.map((c) => ({ key: c.label, label: c.label, percent: c.value })), 'country', stats).sort((a, b) => b.percent - a.percent);
+  }, [audience, stats]);
+
+  // The chips scale both curves, so "Takipçiler" shows the slice of views they account for.
+  const viewerShare = viewerChip === 'all' ? 1 : viewerChip === 'followers' ? splits.followerShare / 100 : splits.nonFollowerShare / 100;
 
   const openEditor = (key: MetricKey) => {
     const m = byKey(key);
@@ -101,8 +166,12 @@ export default function PostInsightsScreen() {
     onLongPress: () => openEditor(key),
     delayLongPress: touch.longPressMs,
   });
+  const openStat = (edit: StatEdit) => {
+    triggerHaptic('selection');
+    setStatEdit(edit);
+  };
 
-  const pct = (value: number) => formatPercent(value, language, 1).replace('+', '');
+  const pct = (value: number) => formatShare(value, language);
   const valueColor = (m: DisplayMetric | undefined) => (indicators && m?.isSimulated ? ('simulation' as const) : ('primary' as const));
   const cardBg = isDark ? colors.sheet : colors.surfaceElevated;
 
@@ -115,6 +184,8 @@ export default function PostInsightsScreen() {
         style: 'destructive',
         onPress: () => {
           for (const key of SIMULATABLE_MEDIA_METRICS) actions.clearOverride(detail.scope, key);
+          actions.clearMediaStats(mediaId);
+          actions.clearMediaAudienceMix(mediaId);
           triggerHaptic('warning');
         },
       },
@@ -143,13 +214,20 @@ export default function PostInsightsScreen() {
     { key: 'saves', icon: <BookmarkIcon size={26} color={colors.text} strokeWidth={1.6} />, label: 'postInsights.saves' },
   ];
 
-  // Same four cards for posts and reels (Instagram Android): watch time lives in the Etkileşim tab.
-  const summaryCards: { key: MetricKey; label: TranslationKey }[] = [
-    { key: 'views', label: 'postInsights.views' },
-    { key: 'reach', label: 'postInsights.reach' },
-    { key: 'profile_visits', label: 'postInsights.profileVisits' },
-    { key: 'follows_from_post', label: 'postInsights.follows' },
-  ];
+  // Reels swap "Erişilen hesaplar" for "Görüntüleyenler" and profile visits for watch time.
+  const summaryCards: { key: MetricKey; label: TranslationKey }[] = isReel
+    ? [
+        { key: 'views', label: 'postInsights.views' },
+        { key: 'reach', label: 'postInsights.reelViewers' },
+        { key: 'avg_watch_time', label: 'postInsights.avgWatchTime' },
+        { key: 'follows_from_post', label: 'postInsights.follows' },
+      ]
+    : [
+        { key: 'views', label: 'postInsights.views' },
+        { key: 'reach', label: 'postInsights.reach' },
+        { key: 'profile_visits', label: 'postInsights.profileVisits' },
+        { key: 'follows_from_post', label: 'postInsights.follows' },
+      ];
 
   const row = (key: MetricKey, label: string) => {
     const m = byKey(key);
@@ -171,7 +249,30 @@ export default function PostInsightsScreen() {
     );
   };
 
-  const ages = audience ? [...audience.ages].sort((a, b) => AGE_ORDER.indexOf(a.label) - AGE_ORDER.indexOf(b.label)) : [];
+  /**
+   * The clip preview above each playback curve. Instagram plays the reel there rather
+   * than showing its cover, so this mounts the real player (muted, looping) whenever the
+   * post has a video to play and falls back to the cover frame when it does not.
+   */
+  const clipWidth = Math.round(width * 0.26);
+  const clipHeight = Math.round(clipWidth / (9 / 16));
+  const clipPreview = media ? (
+    <View style={styles.clip}>
+      <View style={[styles.clipFrame, { width: clipWidth, height: clipHeight, backgroundColor: colors.skeleton }]}>
+        {isReel && media.mediaUrl ? (
+          <MediaVideo media={media} uri={media.mediaUrl} poster={media.thumbnailUrl} width={clipWidth} height={clipHeight} muted loop />
+        ) : (
+          <Image
+            source={{ uri: media.thumbnailUrl || media.mediaUrl }}
+            style={{ width: clipWidth, height: clipHeight }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            accessibilityIgnoresInvertColors
+          />
+        )}
+      </View>
+    </View>
+  ) : null;
 
   return (
     <Screen>
@@ -179,9 +280,20 @@ export default function PostInsightsScreen() {
         title={title}
         showBack
         right={
-          <IconButton accessibilityLabel={t('insights.title')} onPress={() => router.push('/insights')} onLongPress={() => setMenuOpen(true)}>
-            <TrendUpIcon size={28} color={colors.text} strokeWidth={1.7} />
-          </IconButton>
+          <View style={[styles.headerPill, { backgroundColor: colors.surfaceElevated }]}>
+            <Pressable
+              onPress={() => router.push('/insights')}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={t('insights.title')}
+              style={styles.headerAction}
+            >
+              <TrendUpIcon size={24} color={colors.text} strokeWidth={1.9} />
+            </Pressable>
+            <Pressable onPress={() => setMenuOpen(true)} hitSlop={6} accessibilityRole="button" accessibilityLabel={t('postInsights.menuTitle')} style={styles.headerAction}>
+              <MoreIcon size={22} color={colors.text} />
+            </Pressable>
+          </View>
         }
       />
       {!media ? (
@@ -235,7 +347,7 @@ export default function PostInsightsScreen() {
                     const isDuration = card.key === 'avg_watch_time';
                     return (
                       <Pressable key={card.key} {...pressProps(card.key)} style={[styles.card, { backgroundColor: cardBg }]} accessibilityRole="button" accessibilityLabel={`${t(card.label)} ${m?.value ?? 0}`}>
-                        <Text variant="body" color="secondary" numberOfLines={1}>
+                        <Text variant="caption" color="secondary" numberOfLines={1}>
                           {t(card.label)}
                         </Text>
                         {isDuration ? (
@@ -250,9 +362,10 @@ export default function PostInsightsScreen() {
                   })}
                 </View>
 
-                {isReel ? (
+                {/* Cumulative views against a typical post */}
+                {viewsOverTime ? (
                   <>
-                    <SectionHeading title={t('postInsights.viewsOverTime')} onInfo={() => setInfo('viewsOverTime')} />
+                    <SectionHeading title={t('postInsights.viewsOverTime')} onInfo={() => setInfo('viewsOverTime')} right={viewsOverTime.isCustom && indicators ? <Chip label={t('audienceMix.custom')} tone="simulation" small /> : undefined} />
                     <ChipRow<ViewerChip>
                       value={viewerChip}
                       onChange={setViewerChip}
@@ -262,22 +375,109 @@ export default function PostInsightsScreen() {
                         { value: 'nonFollowers', label: t('postInsights.chipNonFollowers') },
                       ]}
                     />
-                    <View style={styles.chart}>
-                      {viewSeries.length > 1 ? (
-                        <LineChart data={viewSeries} height={200} />
-                      ) : (
-                        <Text variant="body" color="secondary">
-                          {t('insights.noData')}
-                        </Text>
-                      )}
-                    </View>
-                  </>
-                ) : breakdown ? (
-                  <>
-                    <SectionHeading title={t('postInsights.sources')} onInfo={() => setInfo('sources')} />
-                    <InsightBars max={100} rows={breakdown.sources.map((s) => ({ label: t(`postInsights.source.${s.key}`), value: s.share, display: pct(s.share) }))} />
+                    <Pressable
+                      style={styles.chart}
+                      delayLongPress={touch.longPressMs}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('postInsights.viewsOverTime')}
+                      onLongPress={() =>
+                        openStat({
+                          key: statKey('views', 'typical'),
+                          title: isReel ? t('postInsights.typicalReel') : t('postInsights.typicalPost'),
+                          subtitle: t('postInsights.infoViewsOverTime'),
+                          value: Math.round(((viewsOverTime.typical[viewsOverTime.typical.length - 1]?.value ?? 0) / Math.max(1, values.views ?? 1)) * 1000) / 10,
+                          max: 400,
+                          isCustom: viewsOverTime.isCustom,
+                        })
+                      }
+                    >
+                      <ComparisonChart
+                        primary={viewsOverTime.points.map((p) => ({ t: p.t, value: Math.round(p.value * viewerShare) }))}
+                        secondary={viewsOverTime.typical.map((p) => ({ t: p.t, value: Math.round(p.value * viewerShare) }))}
+                        domain={viewsOverTime.windowMinutes}
+                        labels={viewsOverTime.labels}
+                        primaryLabel={isReel ? t('postInsights.thisReel') : t('postInsights.thisPost')}
+                        secondaryLabel={isReel ? t('postInsights.typicalReel') : t('postInsights.typicalPost')}
+                      />
+                    </Pressable>
                   </>
                 ) : null}
+
+                {/* What drove the reach */}
+                <SectionHeading title={t('postInsights.factors')} onInfo={() => setInfo('factors')} />
+                <Text variant="caption" color="secondary" style={styles.sectionSub}>
+                  {t('postInsights.factorsSub')}
+                </Text>
+                <FactorList
+                  factors={factors}
+                  format={pct}
+                  indicators={indicators}
+                  onEdit={(factor) =>
+                    openStat({
+                      key: statKey('factor', factor.key),
+                      title: t(`postInsights.factor.${factor.key}`),
+                      value: factor.percent,
+                      max: factor.key === 'skip' ? 100 : 25,
+                      isCustom: factor.isCustom,
+                    })
+                  }
+                />
+
+                {/* How long people watched */}
+                {isReel && watchCurve ? (
+                  <>
+                    <SectionHeading title={t('postInsights.watchTime')} onInfo={() => setInfo('watchTime')} />
+                    {clipPreview}
+                    <Pressable
+                      style={styles.chart}
+                      delayLongPress={touch.longPressMs}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('postInsights.watchTime')}
+                      onLongPress={() =>
+                        openStat({
+                          key: statKey('watch', 'end'),
+                          title: t('postInsights.watchTime'),
+                          subtitle: t('postInsights.infoWatchTime'),
+                          value: watchCurve.values[watchCurve.values.length - 1] ?? 0,
+                          max: 100,
+                          isCustom: watchCurve.isCustom,
+                        })
+                      }
+                    >
+                      <PlaybackChart values={watchCurve.values} max={watchCurve.max} durationSec={watchCurve.durationSec} />
+                    </Pressable>
+                  </>
+                ) : null}
+
+                {/* Where the views came from */}
+                {sources.length > 0 ? (
+                  <>
+                    <SectionHeading title={t('postInsights.sources')} onInfo={() => setInfo('sources')} />
+                    <InsightBars
+                      max={100}
+                      rows={sources.map((s) => ({ key: s.key, label: s.label, value: s.percent, display: pct(s.percent), custom: indicators && s.isCustom }))}
+                      onRowLongPress={(bar) =>
+                        openStat({
+                          key: statKey('source', String(bar.key)),
+                          title: bar.label,
+                          subtitle: t('postInsights.infoSources'),
+                          value: bar.value,
+                          isCustom: sources.find((s) => s.key === bar.key)?.isCustom ?? false,
+                        })
+                      }
+                    />
+                  </>
+                ) : null}
+
+                {/* Instagram's ad entry point */}
+                <SectionHeading title={t('postInsights.ads')} />
+                <ListRow
+                  title={isReel ? t('postInsights.promoteReel') : t('postInsights.promotePost')}
+                  icon={<TrendUpIcon size={22} color={colors.text} strokeWidth={1.9} />}
+                  right={<ChevronRightIcon size={16} color={colors.textTertiary} />}
+                  chevron={false}
+                  onPress={() => setPromoteOpen(true)}
+                />
               </>
             ) : null}
 
@@ -296,29 +496,54 @@ export default function PostInsightsScreen() {
                   {row('shares', t('postInsights.shares'))}
                   {row('saves', t('postInsights.saves'))}
                 </View>
-                {isReel ? (
+
+                {/* When people interacted during playback */}
+                {isReel && engagementCurve ? (
                   <>
-                    <SectionHeading title={t('feed.reel')} />
-                    <View style={styles.rows}>
-                      {row('views', t('postInsights.views'))}
-                      {row('avg_watch_time', t('postInsights.avgWatchTime'))}
-                      {row('replays', t('metric.replays'))}
-                    </View>
-                    {detail.realInsight?.retention ? (
-                      <View style={styles.retention}>
-                        <RetentionChart retention={detail.realInsight.retention} />
-                      </View>
-                    ) : null}
+                    <SectionHeading title={t('postInsights.engagementTiming')} onInfo={() => setInfo('engagementTiming')} />
+                    {clipPreview}
+                    <Pressable
+                      style={styles.chart}
+                      delayLongPress={touch.longPressMs}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('postInsights.engagementTiming')}
+                      onLongPress={() =>
+                        openStat({
+                          key: statKey('engagement', 'peak'),
+                          title: t('postInsights.engagementTiming'),
+                          subtitle: t('postInsights.infoEngagementTiming'),
+                          value: engagementCurve.values[0] ?? 0,
+                          max: 100,
+                          isCustom: engagementCurve.isCustom,
+                        })
+                      }
+                    >
+                      <PlaybackChart values={engagementCurve.values} max={engagementCurve.max} durationSec={engagementCurve.durationSec} smooth={false} />
+                    </Pressable>
                   </>
                 ) : null}
               </>
             ) : null}
 
-            {tab === 'audience' && breakdown ? (
+            {tab === 'audience' ? (
               <>
-                <SectionHeading title={isReel ? t('postInsights.reelViewersTitle') : t('postInsights.viewers')} onInfo={() => setInfo('viewers')} />
-                <InsightBars max={100} rows={[{ label: t('postInsights.followersBar'), value: breakdown.followerShare, display: pct(breakdown.followerShare) }]} />
-                <InsightBars max={100} colorA={colors.simulation} rows={[{ label: t('postInsights.nonFollowersBar'), value: breakdown.nonFollowerShare, display: pct(breakdown.nonFollowerShare) }]} />
+                <SectionHeading
+                  title={isReel ? t('postInsights.reelViewersTitle') : t('postInsights.viewers')}
+                  onInfo={() => setInfo('viewers')}
+                  right={indicators && splits.followerIsCustom ? <Chip label={t('audienceMix.custom')} tone="simulation" small /> : undefined}
+                />
+                {/* Long-press either split to pin it for this post; the Simulation Lab sets the account-wide mix. */}
+                <InsightBars
+                  max={100}
+                  rows={[{ key: 'followers', label: t('postInsights.followersBar'), value: splits.followerShare, display: pct(splits.followerShare), custom: indicators && splits.followerIsCustom }]}
+                  onRowLongPress={() => setAudienceOpen(true)}
+                />
+                <InsightBars
+                  max={100}
+                  colorA={colors.simulation}
+                  rows={[{ key: 'nonFollowers', label: t('postInsights.nonFollowersBar'), value: splits.nonFollowerShare, display: pct(splits.nonFollowerShare), custom: indicators && splits.followerIsCustom }]}
+                  onRowLongPress={() => setAudienceOpen(true)}
+                />
 
                 <SectionHeading title={t('postInsights.audienceDetails')} onInfo={() => setInfo('audience')} />
                 <ChipRow<AudienceChip>
@@ -332,16 +557,42 @@ export default function PostInsightsScreen() {
                 />
                 {audience ? (
                   chip === 'age' ? (
-                    <InsightBars max={100} rows={ages.map((a) => ({ label: a.label, value: a.value, display: pct(a.value) }))} />
+                    <InsightBars
+                      max={100}
+                      rows={ages.map((a) => ({ key: a.key, label: a.label, value: a.percent, display: pct(a.percent), custom: indicators && a.isCustom }))}
+                      onRowLongPress={(bar) =>
+                        openStat({
+                          key: statKey('age', String(bar.key)),
+                          title: bar.label,
+                          subtitle: t('postInsights.infoAudience'),
+                          value: bar.value,
+                          isCustom: ages.find((a) => a.key === bar.key)?.isCustom ?? false,
+                        })
+                      }
+                    />
                   ) : chip === 'country' ? (
-                    <InsightBars max={100} rows={audience.countries.map((c) => ({ label: c.label, value: c.value, display: pct(c.value) }))} />
+                    <InsightBars
+                      max={100}
+                      rows={countries.map((c) => ({ key: c.key, label: c.label, value: c.percent, display: pct(c.percent), custom: indicators && c.isCustom }))}
+                      onRowLongPress={(bar) =>
+                        openStat({
+                          key: statKey('country', String(bar.key)),
+                          title: bar.label,
+                          subtitle: t('postInsights.infoAudience'),
+                          value: bar.value,
+                          isCustom: countries.find((c) => c.key === bar.key)?.isCustom ?? false,
+                        })
+                      }
+                    />
                   ) : (
+                    // Gender is per post, not the account average: this post's own split.
                     <InsightBars
                       max={100}
                       rows={[
-                        { label: t('insights.women'), value: audience.gender.women, display: pct(audience.gender.women) },
-                        { label: t('insights.men'), value: audience.gender.men, display: pct(audience.gender.men) },
+                        { key: 'men', label: t('insights.men'), value: splits.men, display: pct(splits.men), custom: indicators && splits.genderIsCustom },
+                        { key: 'women', label: t('insights.women'), value: splits.women, display: pct(splits.women), custom: indicators && splits.genderIsCustom },
                       ]}
+                      onRowLongPress={() => setAudienceOpen(true)}
                     />
                   )
                 ) : (
@@ -357,7 +608,7 @@ export default function PostInsightsScreen() {
                 <InfoIcon size={14} color={colors.textSecondary} />
                 <Text variant="small" color="secondary" style={{ flex: 1, marginLeft: spacing.sm }}>
                   {detail.realInsight?.source === 'estimated' ? `${t('dashboard.estimatedNotice')} ` : ''}
-                  {t('postInsights.longPressHint')} {t('postInsights.menuHint')}
+                  {t('postInsights.longPressHint')}
                 </Text>
               </View>
             ) : null}
@@ -386,6 +637,15 @@ export default function PostInsightsScreen() {
         />
         <Divider inset={spacing.lg} />
         <ListRow
+          title={t('audienceMix.postTitle')}
+          subtitle={t('audienceMix.menuSub')}
+          onPress={() => {
+            setMenuOpen(false);
+            setTimeout(() => setAudienceOpen(true), 250);
+          }}
+        />
+        <Divider inset={spacing.lg} />
+        <ListRow
           title={t('media.simulate')}
           subtitle={t('sim.longPressHint')}
           onPress={() => {
@@ -397,6 +657,28 @@ export default function PostInsightsScreen() {
         <ListRow title={t('postInsights.resetPost')} chevron={false} danger onPress={resetPost} />
       </BottomSheet>
       <EngagementBoostSheet visible={boostOpen} onClose={() => setBoostOpen(false)} />
+      <AudienceMixSheet visible={audienceOpen} onClose={() => setAudienceOpen(false)} mediaId={mediaId} />
+      <StatPercentSheet edit={statEdit} mediaId={mediaId} onClose={() => setStatEdit(null)} />
+
+      {/* Boosting a post happens inside Instagram, so this only hands the user over. */}
+      <BottomSheet visible={promoteOpen} onClose={() => setPromoteOpen(false)} title={isReel ? t('postInsights.promoteReel') : t('postInsights.promotePost')}>
+        <View style={styles.info}>
+          <Text variant="title">{t('dashboard.igOnlyTitle')}</Text>
+          <Text variant="body" color="secondary" style={{ marginTop: spacing.sm }}>
+            {t('media.promoteBody')}
+          </Text>
+          <Button
+            title={t('dashboard.openInstagram')}
+            variant="secondary"
+            onPress={() => {
+              const url = media?.permalink || 'https://www.instagram.com/';
+              setPromoteOpen(false);
+              void Linking.openURL(url);
+            }}
+            style={{ marginTop: spacing.xl }}
+          />
+        </View>
+      </BottomSheet>
 
       <BottomSheet visible={info !== null} onClose={() => setInfo(null)} title={t('insights.infoTitle')}>
         <View style={styles.info}>
@@ -410,17 +692,21 @@ export default function PostInsightsScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerPill: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.pill, paddingHorizontal: spacing.xs },
+  headerAction: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
   top: { alignItems: 'center', paddingTop: spacing.lg, paddingBottom: spacing.md },
   counts: { flexDirection: 'row', justifyContent: 'space-around', alignSelf: 'stretch', paddingHorizontal: spacing.lg, marginTop: spacing.xl + 4 },
   count: { alignItems: 'center', minWidth: 56 },
   countText: { marginTop: spacing.md, fontSize: 17 },
   cards: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.lg, gap: spacing.md },
   card: { width: '47%', flexGrow: 1, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg, minHeight: 96, justifyContent: 'space-between' },
-  cardValue: { fontSize: 26, marginTop: spacing.sm },
+  cardValue: { fontSize: 22, marginTop: spacing.sm },
   chart: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  sectionSub: { paddingHorizontal: spacing.lg, marginTop: -spacing.sm, marginBottom: spacing.sm },
+  clip: { alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.lg },
+  clipFrame: { borderRadius: radius.sm, overflow: 'hidden' },
   rows: { paddingHorizontal: spacing.lg },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md + 2 },
-  retention: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   notice: { flexDirection: 'row', alignItems: 'flex-start', marginHorizontal: spacing.lg, marginTop: spacing.xl, padding: spacing.sm + 2, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth },
   info: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.lg },
 });

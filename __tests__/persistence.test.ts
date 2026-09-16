@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { durableStorage } from '@/store/persistence';
 import { migratePersisted, sanitizePersisted, SIMULATION_STORAGE_VERSION, useSimulationStore } from '@/store/simulationStore';
+import { DEFAULT_AUDIENCE_MIX } from '@/types/simulation';
 
 const KEY = 'sociallens.simulation.v1';
 const ACCOUNT = 'demo:persist';
@@ -114,12 +115,84 @@ describe('sanitizePersisted / migratePersisted', () => {
     expect(account?.profiles[0]?.boosts).toEqual({ comments: 50 });
     expect(account?.simulatedMedia).toEqual([expect.objectContaining({ id: 's2', type: 'IMAGE' })]);
     expect(account?.profileOverrides).toEqual({});
+    // An account stored before the audience mix existed comes back on the defaults.
+    expect(account?.audienceMix).toEqual(DEFAULT_AUDIENCE_MIX);
+    expect(account?.mediaAudienceMix).toEqual({});
+  });
+
+  it('keeps a stored audience mix and drops unusable per-post entries', () => {
+    const out = sanitizePersisted({
+      enabled: true,
+      accounts: {
+        a: {
+          profiles: [{ id: 'p' }],
+          activeProfileId: 'p',
+          audienceMix: { followerShare: 2.5, followerVariance: 1, womenShare: 12, genderVariance: 'x' },
+          mediaAudienceMix: { m1: { womenShare: 18 }, m2: { followerShare: 'nope' }, m3: 'junk' },
+        },
+      },
+    });
+    const account = out.accounts.a;
+    expect(account?.audienceMix).toEqual({ followerShare: 2.5, followerVariance: 1, womenShare: 12, genderVariance: DEFAULT_AUDIENCE_MIX.genderVariance });
+    expect(account?.mediaAudienceMix).toEqual({ m1: { womenShare: 18 } });
+  });
+
+  it('keeps hand-set post percentages and drops keys that are not "<group>.<name>"', () => {
+    const out = sanitizePersisted({
+      enabled: true,
+      accounts: {
+        a: {
+          profiles: [{ id: 'p' }],
+          activeProfileId: 'p',
+          mediaStats: {
+            m1: { 'factor.likes': 2.4, 'source.reels': 82.1, 'not a key': 5, 'age.18-24': 'x', 'watch.end': 9 },
+            m2: { nothing: 1 },
+            m3: 'junk',
+          },
+        },
+      },
+    });
+    expect(out.accounts.a?.mediaStats).toEqual({ m1: { 'factor.likes': 2.4, 'source.reels': 82.1, 'watch.end': 9 } });
+  });
+
+  it('keeps the account-level bars the same way', () => {
+    const out = sanitizePersisted({
+      enabled: true,
+      accounts: {
+        a: {
+          profiles: [{ id: 'p' }],
+          activeProfileId: 'p',
+          accountStats: { 'age.18-24': 42, 'country.Türkiye': 91.3, oops: 5, 'city.İstanbul': 'x' },
+        },
+      },
+    });
+    expect(out.accounts.a?.accountStats).toEqual({ 'age.18-24': 42, 'country.Türkiye': 91.3 });
+  });
+
+  it('carries the audience mix and every pinned percentage through a relaunch', async () => {
+    const store = useSimulationStore.getState();
+    store.setEnabled(true);
+    store.setAudienceMix(ACCOUNT, { followerShare: 2.5, womenShare: 12 });
+    store.setMediaAudienceMix(ACCOUNT, 'm1', { womenShare: 33 });
+    store.setMediaStat(ACCOUNT, 'm1', 'factor.likes', 9.5);
+    store.setAccountStat(ACCOUNT, 'age.18-24', 42);
+    await flush();
+
+    const onDisk = await AsyncStorage.getItem(KEY);
+    await relaunch(onDisk);
+
+    const account = useSimulationStore.getState().accounts[ACCOUNT];
+    expect(useSimulationStore.getState().enabled).toBe(true);
+    expect(account?.audienceMix).toMatchObject({ followerShare: 2.5, womenShare: 12 });
+    expect(account?.mediaAudienceMix).toEqual({ m1: { womenShare: 33 } });
+    expect(account?.mediaStats).toEqual({ m1: { 'factor.likes': 9.5 } });
+    expect(account?.accountStats).toEqual({ 'age.18-24': 42 });
   });
 
   it('migrates older versions through the same sanitizer', () => {
     const migrated = migratePersisted({ enabled: true, accounts: {} }, 0);
     expect(migrated).toEqual({ enabled: true, accounts: {}, lastChangedAt: undefined });
-    expect(SIMULATION_STORAGE_VERSION).toBe(2);
+    expect(SIMULATION_STORAGE_VERSION).toBe(5);
   });
 });
 

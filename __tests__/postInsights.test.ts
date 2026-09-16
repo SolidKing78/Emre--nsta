@@ -57,18 +57,27 @@ describe('completePostMetrics', () => {
 
 describe('buildPostBreakdown', () => {
   it('view sources sum to 100 and the feed leads for photos, Reels for reels', () => {
-    const photo = buildPostBreakdown(media, null);
+    const photo = buildPostBreakdown(media);
     expect(photo.sources.reduce((acc, s) => acc + s.share, 0)).toBeCloseTo(100, 1);
     expect(photo.sources[0]?.key).toBe('feed');
-    const reel = buildPostBreakdown({ ...media, type: 'REEL' }, null);
+    const reel = buildPostBreakdown({ ...media, type: 'REEL' });
     expect(reel.sources[0]?.key).toBe('reels');
   });
 
-  it('follower share follows the account audience', () => {
-    const audience = { followerShare: 0.9, gender: { women: 40, men: 60 }, ages: [], cities: [], countries: [], activeHours: [], source: 'estimated' as const };
-    const out = buildPostBreakdown(media, audience);
+  it('follower share follows the audience mix and stays stable per post', () => {
+    const mix = { followerShare: 0.7, followerVariance: 0.4, womenShare: 7, genderVariance: 2 };
+    const out = buildPostBreakdown(media, mix);
     expect(out.followerShare + out.nonFollowerShare).toBeCloseTo(100, 1);
-    expect(out.followerShare).toBeGreaterThanOrEqual(80);
-    expect(buildPostBreakdown(media, audience)).toEqual(out);
+    expect(out.followerShare).toBeGreaterThanOrEqual(0.3);
+    expect(out.followerShare).toBeLessThanOrEqual(1.1);
+    expect(out.nonFollowerShare).toBeGreaterThan(98);
+    expect(buildPostBreakdown(media, mix)).toEqual(out);
+  });
+
+  it('a hand-set follower share wins over the mix', () => {
+    const mix = { followerShare: 0.7, followerVariance: 0.4, womenShare: 7, genderVariance: 2 };
+    const out = buildPostBreakdown(media, mix, { followerShare: 42 });
+    expect(out.followerShare).toBe(42);
+    expect(out.nonFollowerShare).toBe(58);
   });
 });

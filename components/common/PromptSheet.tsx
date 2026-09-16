@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { useT } from '@/i18n';
@@ -50,5 +51,5 @@ export function PromptSheet({ visible, title, placeholder, initialValue = '', co
 
 const styles = StyleSheet.create({
   body: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
-  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 48, fontSize: 16 },
+  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 48, fontSize: 16, ...fontStyles.regular },
 });

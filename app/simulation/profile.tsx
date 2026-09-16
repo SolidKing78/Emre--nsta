@@ -11,6 +11,7 @@ import { Text } from '@/components/common/Text';
 import { CameraIcon } from '@/components/icons';
 import { useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
 import { SimulationBanner } from '@/components/simulation/SimulationBadge';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { useAccount, useSession } from '@/features/instagram/hooks';
 import { ACCOUNT_SCOPE, useEffectiveAccount, useProfileOverrides, useSimulationActions, useSimulationIndicators } from '@/features/simulation/useSimulation';
@@ -156,6 +157,6 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   stat: { flex: 1, alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.md, paddingVertical: spacing.sm },
   label: { marginTop: spacing.lg, marginBottom: spacing.xs },
-  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, fontSize: 15 },
+  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, fontSize: 15, ...fontStyles.regular },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.md, marginTop: spacing.sm },
 });

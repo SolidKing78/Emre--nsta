@@ -12,6 +12,7 @@ import { Button } from '@/components/common/Button';
 import { Screen } from '@/components/common/Screen';
 import { Text } from '@/components/common/Text';
 import { CameraIcon } from '@/components/icons';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
@@ -215,7 +216,7 @@ const styles = StyleSheet.create({
   avatarBadge: { position: 'absolute', top: 62, right: '50%', marginRight: -46, width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   field: { marginBottom: spacing.md },
   inputWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, minHeight: 46 },
-  input: { flex: 1, fontSize: 15, paddingVertical: spacing.sm },
+  input: { flex: 1, fontSize: 15, paddingVertical: spacing.sm, ...fontStyles.regular },
   numbers: { flexDirection: 'row', gap: spacing.sm },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.sm },
 });

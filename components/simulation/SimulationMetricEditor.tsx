@@ -7,6 +7,7 @@ import { Button } from '@/components/common/Button';
 import { Chip } from '@/components/common/Primitives';
 import { StatCounter } from '@/components/common/StatCounter';
 import { Text } from '@/components/common/Text';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { useSimulationActions, useSimulationEnabled, useOverrides } from '@/features/simulation/useSimulation';
 import { triggerHaptic } from '@/hooks/useHaptics';
@@ -366,7 +367,7 @@ const styles = StyleSheet.create({
   inputWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderRadius: radius.md, paddingHorizontal: spacing.lg, height: 52 },
   rangeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rangeChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
-  input: { flex: 1, fontSize: 22, fontWeight: '700', paddingVertical: 0 },
+  input: { flex: 1, fontSize: 22, paddingVertical: 0, ...fontStyles.bold },
   slider: { width: '100%', height: 40, marginTop: spacing.md },
   sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -4 },
   presets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { BottomSheet } from '@/components/common/BottomSheet';
 import { Button } from '@/components/common/Button';
 import { Text } from '@/components/common/Text';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { useGrowthPercent, useSimulationActions, useSimulationEnabled } from '@/features/simulation/useSimulation';
 import { triggerHaptic } from '@/hooks/useHaptics';
@@ -226,7 +227,7 @@ const styles = StyleSheet.create({
   body: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
   inputWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 46, minWidth: 110 },
-  input: { flex: 1, fontSize: 20, fontWeight: '700', paddingVertical: 0, textAlign: 'right', marginRight: 4 },
+  input: { flex: 1, fontSize: 20, paddingVertical: 0, textAlign: 'right', marginRight: 4, ...fontStyles.bold },
   slider: { width: '100%', height: 40, marginTop: spacing.md },
   sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -4 },
   presets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },

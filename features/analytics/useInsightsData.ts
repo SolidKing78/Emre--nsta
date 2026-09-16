@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 
+import { useEffectiveAudience } from '@/features/analytics/useAudienceSplits';
 import { useContentPerformance } from '@/features/analytics/useContentPerformance';
-import { flattenMedia, useAccount, useAccountInsights, useAudience, useMediaFeed } from '@/features/instagram/hooks';
+import { flattenMedia, useAccount, useAccountInsights, useMediaFeed } from '@/features/instagram/hooks';
 import { ACCOUNT_SCOPE, useDisplayMetrics, useEffectiveAccount, useEffectiveMedia, type DisplayMetric } from '@/features/simulation/useSimulation';
 import type { ContentPerformance } from '@/services/analytics/content';
 import type { AppAudience, DateRange, MediaType, MetricKey, SeriesPoint } from '@/types/app';
+import { DEFAULT_AUDIENCE_MIX } from '@/types/simulation';
 import { addDays, buildDateRange, isWithinRange, toISODate } from '@/utils/date';
 import { createRng } from '@/utils/random';
 
@@ -76,15 +78,14 @@ export function useInsightsData(range: DateRange) {
   const effectiveAccount = useEffectiveAccount(account);
   const insights = useAccountInsights(range);
   const feed = useMediaFeed();
-  const audienceQuery = useAudience();
+  const audience: AppAudience | null = useEffectiveAudience();
   const realMedia = useMemo(() => flattenMedia(feed.data?.pages), [feed.data]);
   const media = useEffectiveMedia(realMedia, effectiveAccount);
   const inRange = useMemo(() => media.filter((m) => isWithinRange(m.timestamp, range)), [media, range]);
   const performance = useContentPerformance(inRange.length > 0 ? inRange : media, effectiveAccount);
   const metrics = useDisplayMetrics(ACCOUNT_SCOPE, insights.data?.metrics);
   const byKey = (key: MetricKey) => metrics.find((m) => m.key === key);
-  const audience: AppAudience | null = audienceQuery.data ?? null;
-  const followerShare = audience?.followerShare ?? 0.4;
+  const followerShare = audience?.followerShare ?? DEFAULT_AUDIENCE_MIX.followerShare / 100;
 
   const byType = useMemo(() => {
     const buckets: Record<ContentBucket, { views: number; likes: number; comments: number; shares: number; saves: number; interactions: number; count: number }> = {

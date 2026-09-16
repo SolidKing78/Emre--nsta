@@ -7,13 +7,14 @@ import { StatCounter } from '@/components/common/StatCounter';
 import { Text } from '@/components/common/Text';
 import { useMetricEditor } from '@/components/simulation/SimulationMetricEditor';
 import { spacing, touch } from '@/constants/theme';
+import { useIsAccountBucketCustom } from '@/features/analytics/useAudienceSplits';
 import type { useInsightsData } from '@/features/analytics/useInsightsData';
-import { ACCOUNT_SCOPE } from '@/features/simulation/useSimulation';
+import { ACCOUNT_SCOPE, useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
 import type { DateRange } from '@/types/app';
 import { formatShortDate } from '@/utils/date';
-import { formatPercent } from '@/utils/format';
+import { formatPercent, formatShare } from '@/utils/format';
 
 import { ChipRow, DropdownButton, InsightBars, SectionHeading } from './primitives';
 
@@ -25,15 +26,28 @@ interface AudienceTabProps {
   rangeLabel: string;
   onOpenRange: () => void;
   onInfo: () => void;
+  /** Long-press on the gender split opens the audience mix editor. */
+  onEditAudience?: () => void;
+  /** Long-press on an age / city / country bar opens the percentage editor. */
+  onEditBucket?: (group: 'age' | 'city' | 'country', label: string, value: number, isCustom: boolean) => void;
 }
 
 /** Instagram "Hedef kitle" tab: followers, growth over time, gender, age, cities, countries, active times. */
-export function AudienceTab({ data, range, rangeLabel, onOpenRange, onInfo }: AudienceTabProps) {
+export function AudienceTab({ data, range, rangeLabel, onOpenRange, onInfo, onEditAudience, onEditBucket }: AudienceTabProps) {
   const { colors } = useTheme();
   const t = useT();
   const language = useLanguage();
   const editor = useMetricEditor();
+  const indicators = useSimulationIndicators();
+  const isCustom = useIsAccountBucketCustom();
   const [view, setView] = useState<GrowthView>('total');
+
+  const pct = (value: number) => formatShare(value, language);
+  /** Every demographic bar is long-pressable; the value it shows is what the editor opens on. */
+  const bucketRows = (group: 'age' | 'city' | 'country', buckets: readonly { label: string; value: number }[]) =>
+    buckets.map((b) => ({ key: `${group}.${b.label}`, label: b.label, value: b.value, display: pct(b.value), custom: indicators && isCustom(group, b.label) }));
+  const onBucketLongPress = (group: 'age' | 'city' | 'country') => (row: { label: string; value: number }) =>
+    onEditBucket?.(group, row.label, row.value, isCustom(group, row.label));
 
   const followers = data.effectiveAccount?.followersCount ?? 0;
   const realFollowers = data.account?.followersCount ?? followers;
@@ -86,22 +100,25 @@ export function AudienceTab({ data, range, rangeLabel, onOpenRange, onInfo }: Au
       {audience ? (
         <>
           <SectionHeading title={t('insights.gender')} onInfo={onInfo} />
-          <InsightBars
-            max={100}
-            rows={[
-              { label: t('insights.women'), value: audience.gender.women, display: formatPercent(audience.gender.women, language, 1).replace('+', '') },
-              { label: t('insights.men'), value: audience.gender.men, display: formatPercent(audience.gender.men, language, 1).replace('+', '') },
-            ]}
-          />
+          <Pressable onLongPress={onEditAudience} delayLongPress={touch.longPressMs} accessibilityRole="button" accessibilityLabel={t('insights.gender')}>
+            <InsightBars
+              max={100}
+              rows={[
+                { key: 'men', label: t('insights.men'), value: audience.gender.men, display: pct(audience.gender.men) },
+                { key: 'women', label: t('insights.women'), value: audience.gender.women, display: pct(audience.gender.women) },
+              ]}
+              onRowLongPress={onEditAudience}
+            />
+          </Pressable>
 
           <SectionHeading title={t('insights.ageRange')} onInfo={onInfo} />
-          <InsightBars max={100} rows={audience.ages.map((a) => ({ label: a.label, value: a.value, display: formatPercent(a.value, language, 1).replace('+', '') }))} />
+          <InsightBars max={100} rows={bucketRows('age', audience.ages)} onRowLongPress={onBucketLongPress('age')} />
 
           <SectionHeading title={t('insights.topCities')} onInfo={onInfo} />
-          <InsightBars max={100} rows={audience.cities.map((c) => ({ label: c.label, value: c.value, display: formatPercent(c.value, language, 1).replace('+', '') }))} />
+          <InsightBars max={100} rows={bucketRows('city', audience.cities)} onRowLongPress={onBucketLongPress('city')} />
 
           <SectionHeading title={t('insights.topCountries')} onInfo={onInfo} />
-          <InsightBars max={100} rows={audience.countries.map((c) => ({ label: c.label, value: c.value, display: formatPercent(c.value, language, 1).replace('+', '') }))} />
+          <InsightBars max={100} rows={bucketRows('country', audience.countries)} onRowLongPress={onBucketLongPress('country')} />
 
           <SectionHeading title={t('insights.activeTimes')} onInfo={onInfo} />
           <View style={styles.chart}>

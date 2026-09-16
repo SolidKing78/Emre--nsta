@@ -15,6 +15,8 @@ import { Skeleton } from '@/components/common/Skeleton';
 import { ErrorState } from '@/components/common/States';
 import { Text } from '@/components/common/Text';
 import { CheckIcon, InfoIcon } from '@/components/icons';
+import { AudienceMixSheet } from '@/components/simulation/AudienceMixEditor';
+import { StatPercentSheet, type StatEdit } from '@/components/simulation/StatPercentSheet';
 import { radius, spacing } from '@/constants/theme';
 import { insightRange, useInsightsData, type InsightRangeDays } from '@/features/analytics/useInsightsData';
 import { useRefreshAll, useSession } from '@/features/instagram/hooks';
@@ -42,6 +44,8 @@ export default function InsightsScreen() {
   const [contentDays, setContentDays] = useState<InsightRangeDays>(365);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [audienceOpen, setAudienceOpen] = useState(false);
+  const [statEdit, setStatEdit] = useState<StatEdit | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const days = tab === 'content' ? contentDays : overviewDays;
@@ -104,7 +108,15 @@ export default function InsightsScreen() {
         ) : tab === 'content' ? (
           <ContentTab data={data} rangeLabel={t(RANGE_LABEL[days])} onOpenRange={() => setRangeOpen(true)} />
         ) : (
-          <AudienceTab data={data} range={range} rangeLabel={t(RANGE_LABEL[days])} onOpenRange={() => setRangeOpen(true)} onInfo={() => setInfoOpen(true)} />
+          <AudienceTab
+            data={data}
+            range={range}
+            rangeLabel={t(RANGE_LABEL[days])}
+            onOpenRange={() => setRangeOpen(true)}
+            onInfo={() => setInfoOpen(true)}
+            onEditAudience={() => setAudienceOpen(true)}
+            onEditBucket={(group, label, value, isCustom) => setStatEdit({ key: `${group}.${label}`, title: label, subtitle: t('insights.audience'), value, isCustom })}
+          />
         )}
       </ScrollView>
 
@@ -123,6 +135,9 @@ export default function InsightsScreen() {
           />
         ))}
       </BottomSheet>
+
+      <AudienceMixSheet visible={audienceOpen} onClose={() => setAudienceOpen(false)} />
+      <StatPercentSheet edit={statEdit} onClose={() => setStatEdit(null)} />
 
       <BottomSheet visible={infoOpen} onClose={() => setInfoOpen(false)} title={t('insights.infoTitle')}>
         <View style={styles.info}>

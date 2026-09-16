@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppErrorBoundary } from '@/components/common/AppErrorBoundary';
+import { fontAssets } from '@/constants/fonts';
 import { MetricEditorProvider } from '@/components/simulation/SimulationMetricEditor';
 import { useProviderRefinements } from '@/features/instagram/hooks';
 import { useTheme } from '@/hooks/useTheme';
@@ -45,6 +47,19 @@ function useHydrated(): boolean {
   return a && b && c && d;
 }
 
+/**
+ * The app's typeface (Inter, the closest match to Instagram Sans). The splash stays up
+ * until it is in memory so no screen ever paints in the system font first; a failed load
+ * is not worth blocking on — the platform font stands in.
+ */
+function useAppFonts(): boolean {
+  const [loaded, error] = useFonts(fontAssets);
+  useEffect(() => {
+    if (error) console.warn('[fonts] could not be loaded; falling back to the system font', error);
+  }, [error]);
+  return loaded || Boolean(error);
+}
+
 /** Keeps queries in sync with background refinements from the active provider. */
 function ProviderRefinements() {
   useProviderRefinements();
@@ -67,6 +82,7 @@ function AuthExpiryGuard() {
 function Navigation() {
   const { colors, isDark } = useTheme();
   const hydrated = useHydrated();
+  const fontsReady = useAppFonts();
 
   const navTheme = useMemo(() => {
     const base = isDark ? DarkTheme : DefaultTheme;
@@ -89,10 +105,10 @@ function Navigation() {
   }, [colors.background]);
 
   useEffect(() => {
-    if (hydrated) {
+    if (hydrated && fontsReady) {
       SplashScreen.hideAsync().catch(() => undefined);
     }
-  }, [hydrated]);
+  }, [hydrated, fontsReady]);
 
   return (
     <ThemeProvider value={navTheme}>

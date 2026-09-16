@@ -6,6 +6,7 @@ import { Avatar } from '@/components/common/Avatar';
 import { Screen } from '@/components/common/Screen';
 import { Text } from '@/components/common/Text';
 import { CloseIcon, SearchIcon } from '@/components/icons';
+import { fontStyles } from '@/constants/fonts';
 import { radius, spacing } from '@/constants/theme';
 import { useAccount } from '@/features/instagram/hooks';
 import { triggerHaptic } from '@/hooks/useHaptics';
@@ -141,7 +142,7 @@ export default function SearchTab() {
 const styles = StyleSheet.create({
   searchRow: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   searchBox: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.md, paddingHorizontal: spacing.md, height: 42 },
-  input: { flex: 1, fontSize: 16, paddingVertical: 0, marginLeft: spacing.sm },
+  input: { flex: 1, fontSize: 16, paddingVertical: 0, marginLeft: spacing.sm, ...fontStyles.regular },
   error: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   sectionRow: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm },
   resultRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },

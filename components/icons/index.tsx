@@ -678,3 +678,16 @@ export function MusicNoteIcon({ size, color = '#000' }: IconProps) {
     </Svg>
   );
 }
+
+/**
+ * "Geçme oranı" — a timer whose ring is drawn as ticks, the way Instagram marks the
+ * share of viewers who scrolled past before the clip got going.
+ */
+export function SkipRateIcon({ size, color = '#000', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg {...base({ size })}>
+      <Circle cx="12" cy="12" r="9" fill="none" stroke={color} strokeWidth={strokeWidth} strokeDasharray="1.6 2.4" strokeLinecap="round" />
+      <Polyline points="12 7.5 12 12 15 13.6" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}

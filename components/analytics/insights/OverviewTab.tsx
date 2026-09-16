@@ -13,7 +13,7 @@ import { ACCOUNT_SCOPE } from '@/features/simulation/useSimulation';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage, useT } from '@/i18n';
 import type { MetricKey } from '@/types/app';
-import { formatCompact, formatPercent } from '@/utils/format';
+import { formatCompact, formatShare } from '@/utils/format';
 
 import { ChipRow, DropdownButton, InsightBars, LegendDots, SectionHeading, ThickDivider } from './primitives';
 
@@ -93,10 +93,10 @@ export function OverviewTab({ data, rangeLabel, onOpenRange, onInfo }: OverviewT
 
       <View style={styles.split}>
         <Text variant="body">
-          <Text variant="bodyStrong">{formatPercent(followerPct, language, 1).replace('+', '')}</Text> {t('insights.followersShare', { p: '' }).trim()}
+          <Text variant="bodyStrong">{formatShare(followerPct, language)}</Text> {t('insights.followersShare', { p: '' }).trim()}
         </Text>
         <Text variant="body">
-          <Text variant="bodyStrong">{formatPercent(nonFollowerPct, language, 1).replace('+', '')}</Text> {t('insights.nonFollowersShare', { p: '' }).trim()}
+          <Text variant="bodyStrong">{formatShare(nonFollowerPct, language)}</Text> {t('insights.nonFollowersShare', { p: '' }).trim()}
         </Text>
       </View>
 

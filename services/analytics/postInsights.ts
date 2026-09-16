@@ -1,4 +1,6 @@
-import type { AppAudience, AppMedia, AppMediaInsight, AppMetric, MetricKey } from '@/types/app';
+import { followerSplitFor, round1 } from '@/services/analytics/audienceMix';
+import type { AppMedia, AppMediaInsight, AppMetric, MetricKey } from '@/types/app';
+import { DEFAULT_AUDIENCE_MIX, type AudienceMix, type MediaAudienceMix } from '@/types/simulation';
 import { addDays, eachDay, toISODate } from '@/utils/date';
 import { buildSeries, createRng } from '@/utils/random';
 
@@ -25,10 +27,6 @@ export interface PostBreakdown {
 }
 
 const ORDER: readonly MetricKey[] = ['views', 'reach', 'likes', 'comments', 'reposts', 'shares', 'saves', 'interactions', 'profile_visits', 'follows_from_post', 'avg_watch_time', 'replays'];
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
-}
 
 /**
  * Reposts ("Yeniden paylaşımlar") when the source has none: a small, stable share of
@@ -89,18 +87,22 @@ export function buildPostViewSeries(media: AppMedia, views: number, now: Date = 
   return buildSeries(dates, views, `post-views-${media.id}`, { trend: -1.2, noise: 0.45, weekend: 0.9 });
 }
 
-/** View sources and follower share for a post; percentages, deterministic per post. */
-export function buildPostBreakdown(media: AppMedia, audience: AppAudience | null | undefined): PostBreakdown {
+/**
+ * View sources and follower share for a post; percentages, deterministic per post.
+ * The follower split comes from the audience mix (drifted per post, or set by hand);
+ * the view sources are derived from the post itself.
+ */
+export function buildPostBreakdown(media: AppMedia, mix: AudienceMix = DEFAULT_AUDIENCE_MIX, override?: MediaAudienceMix): PostBreakdown {
   const rng = createRng(`post-breakdown-${media.id}`);
   const isReel = media.type === 'REEL';
   const weights: [ViewSourceKey, number][] = isReel
     ? [
-        ['reels', 48 + rng() * 22],
-        ['feed', 10 + rng() * 12],
-        ['profile', 6 + rng() * 10],
-        ['explore', 5 + rng() * 12],
-        ['stories', 2 + rng() * 6],
-        ['other', 2 + rng() * 5],
+        // A reel travels on the Reels tab first and Explore second; the feed barely shows it.
+        ['reels', 62 + rng() * 20],
+        ['explore', 8 + rng() * 11],
+        ['feed', 2 + rng() * 6],
+        ['profile', 1 + rng() * 4],
+        ['stories', 0.5 + rng() * 3],
       ]
     : [
         ['feed', 45 + rng() * 18],
@@ -116,7 +118,5 @@ export function buildPostBreakdown(media: AppMedia, audience: AppAudience | null
   if (sources[0]) sources[0].share = round1(sources[0].share + drift);
   sources.sort((a, b) => b.share - a.share);
 
-  const base = audience ? audience.followerShare * 100 : 82;
-  const followerShare = round1(Math.min(99, Math.max(5, base + (rng() - 0.5) * 16)));
-  return { sources, followerShare, nonFollowerShare: round1(100 - followerShare) };
+  return { sources, ...followerSplitFor(media.id, mix, override) };
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { fontStyles } from '@/constants/fonts';
 import { darkColors, lightColors, radius, spacing } from '@/constants/theme';
 import { t } from '@/i18n';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -71,9 +72,9 @@ function safeT(key: Parameters<typeof t>[0], fallback: string): string {
 
 const styles = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xxl },
-  title: { fontSize: 20, fontWeight: '600', textAlign: 'center' },
+  title: { fontSize: 20, textAlign: 'center', ...fontStyles.semibold },
   body: { fontSize: 15, textAlign: 'center', marginTop: spacing.sm, lineHeight: 20 },
   detail: { fontSize: 12, textAlign: 'center', marginTop: spacing.md, fontFamily: 'monospace' },
   button: { marginTop: spacing.xl, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.md },
-  buttonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  buttonText: { color: '#fff', fontSize: 15, ...fontStyles.semibold },
 });

@@ -1,6 +1,6 @@
 # SocialLens — Devir-Teslim Notu (başka PC'de devam etmek için)
 
-Tarih: 2026-09-15 (akşam güncellemesi) · Durum: **tsc temiz · lint temiz · jest 12 suite / 89 test geçiyor · `expo export` android + ios başarılı · web'de demo akışı uçtan uca çalıştırıldı (aşağıda)**
+Tarih: 2026-09-16 · Durum: **tsc temiz · lint temiz · jest 19 suite / 192 test geçiyor (bileşen + etkileşim testleri dâhil) · `expo export --platform android` başarılı · web'de demo akışı uçtan uca çalıştırıldı (aşağıda)**
 
 Bu dosya, projeye başka bir bilgisayarda kaldığı yerden devam edebilmek için yazıldı. Sırasıyla:
 (1) projeyi nasıl ayağa kaldıracağın, (2) uygulamanın bugünkü durumu, (3) bugün yapılan değişiklikler,
@@ -127,6 +127,74 @@ Meta yalnızca **HTTPS** redirect URI kabul ediyor ve Instagram Login **PKCE tan
 - **Tutarlılık kuralları** (aynı gönderi her ekranda aynı sayı): beğeni/yorum/izlenme akışta `useEffectiveMedia`, ızgara/✈/İçerik sekmesinde `applyMediaOverrides` (içgörü), Gönderi istatistiklerinde `completePostMetrics`+overlay ile çözülür — üçü de aynı gerçek değer + aynı tohum (`<id>:<metrik>`) → aynı sonuç. Yeniden paylaşım tek fonksiyondan (`estimateReposts`) gelir ve içgörüye eksikse eklenip kendi tohumuyla çözülür; `ContentPerformance.reposts` alanı eklendi (İçerik sekmesi artık `shares×0,35` kullanmıyor). Senaryo gönderileri de kadranları/büyümeyi izler. Hesap düzeyi "Etkileşimler" = parçaların paylarına göre ağırlıklı değişim (beğeni 0,78 · yorum 0,07 · paylaşım 0,06 · kaydetme 0,09). Growth Lab bilerek gerçek veride kalır.
 - **Metrik düzenleme kaydırıcısı** (`SimulationMetricEditor`): sabit 1 Mn üst sınır kaldırıldı; aralık gerçek değerin 10× / 100× / 1000× katı (çiplerle seçilir, 1/2/5×10ⁿ'e yuvarlanır), adım = aralık/500, giriş kutusunun iki yanında −/+ düğmeleri (gerçek değerin %5'i). 37 beğenilik gönderide bir tık ≈ 1, milyonluk Reels'te ≈ 20 bin.
 - Testler: `__tests__/boost.test.ts` (16), `__tests__/postInsights.test.ts` (4), `format.test.ts` +1. Toplam **11 suite / 79 test**. `__tests__/scenarioConsistency.test.ts` (6): dört senaryoda aynı gönderinin beğeni/yorum/izlenme/paylaşım/kaydetme/yeniden paylaşım sayısının akış kartı, performans (ızgara · ✈ · İçerik sekmesi) ve Gönderi istatistikleri ekranında **birebir aynı** çıktığını, etkileşimin parçaların toplamı olduğunu ve hesap değerlerinin aynı yönde hareket ettiğini doğrular.
+
+### 3.11 Tipografinin ölçülmesi, test altyapısı ve tam entegrasyon
+
+**Yazı tipi tahmin değil, ölçüldü.** Ekran kaydından kesilen metinler Inter'de 100px'te render edilip iki mürekkep kutusunun oranı alındı (kayıt 576px genişlikte, 393pt cihaz → 1.466 px/pt):
+- **Genişlik**: Instagram'ın fontu, aynı mürekkep yüksekliğinde Inter'den yalnızca **%0,8–2,7 daha geniş**. Yani Inter doğru seçim; harf formları da üst üste bindirildiğinde örtüşüyor (`ş`, `ı`, `ğ`, `ö` dâhil).
+- **Harf aralığı**: bu yüzden eklediğim negatif tracking (−0,1 … −0,5) **yanlış yöndeydi** — metni Instagram'dan daha da dar yapıyordu. `letterSpacingFor` artık her boyutta **0** döndürüyor ve neden'i kodda yazılı (`constants/theme.ts`).
+- **Boyutlar** (ölçülen → uygulanan): bölüm başlığı 16,3–16,4pt → `heading` **20→18**; özet kartı etiketi 12,4pt → `body`(15) yerine **`caption`(13)**; özet kartı değeri 20,0/20,3pt (iki bağımsız dize aynı sonucu verdi) → **26→22**; faktör alt başlığı 12,0pt → **`caption`**; çubuk değeri 15,3pt → boyut `bodyStrong`(15)'te kaldı, sadece **kalınlık 700** (videodaki fark boyut değil kalınlıkmış). Çubuk etiketi (15,1pt), sekme etiketi (14,5pt), faktör etiketi (14,5pt) ve trend satırı (12,2pt) zaten doğruydu.
+- Ölçülen değerler `__tests__/fonts.test.tsx` içinde kilitli — biri "daha büyük olsun" diye geri almasın diye.
+
+**Klip önizlemesi gerçek oynatıcı**: videoda "İnsanların Reels videonu izleme süresi" başlığının altındaki küçük kare, kapak değil **oynayan videonun kendisi**. Artık `MediaVideo` (sessiz, döngülü) kullanılıyor; video olmayan gönderilerde kapak karesine düşüyor.
+
+**Test altyapısı** (ilk kez bileşen testleri):
+- `__mocks__/react-native-reanimated.js` ve `__mocks__/react-native-gesture-handler.js` — Reanimated 4 jest'te native worklet runtime istediği için kök `__mocks__` klasöründen otomatik devreye giriyor; her suite karşılıksız yararlanıyor.
+- `__tests__/helpers/render.tsx` — sağlayıcılar + `texts` / `allText` / `byLabel` / `editViaLongPress` yardımcıları.
+- Yeni suite'ler: `fonts.test.tsx` (11), `postInsightsScreen.test.tsx` (21), `accountAudienceTab.test.tsx` (4), `audienceMixEditor.test.tsx` (7), `postStatsStore.test.ts` (18), `reelInsights.test.ts` (27), `audienceMix.test.ts` (10) + mevcutlar. Ekran testleri üç sekmeyi de mount ediyor, **her uzun basma → düzenle → uygula akışını** uçtan uca yürütüyor, fotoğraf/Reels ayrımını, senaryo açık/kapalı, kadran, büyüme oranı, senaryo değiştirme, tüm çubukların sabitlenmesi ve **TR/EN** durumlarını kapsıyor.
+- Bu testler üç gerçek hata yakaladı: yüzdelerin `+%38,6` diye işaretli çıkması, hesap ekranında `%93,0` gibi gereksiz ondalık, ve çubuk değerinin boyutunun yanlış büyütülmesi.
+
+**Tam entegrasyon** (artık hiçbir istatistik simülasyon dışında değil):
+- **Hesap istatistikleri ekranındaki yaş / şehir / ülke çubukları da uzun basılıp ayarlanabiliyor** (`accountStats`, `setAccountStat`). Aynı `StatPercentSheet` hem gönderi hem hesap düzeyini yönetiyor; hesap düzeyinde "Bu değer hesabın tamamı için geçerlidir" diyor. `useEffectiveAudience` bunları uygulayıp toplamı 100'de tutuyor.
+- **`resetAll` artık gerçekten her şeyi sıfırlıyor**: senaryo override'ları + büyüme + kadranlar + kitle dağılımı + gönderi başına bölünmeler + tüm elle ayarlı yüzdeler (hesap ve gönderi). Yarısı simüle kalan bir "sıfırla" hiç sıfırlamamaktan kötüydü.
+- **Senaryo Laboratuvarı'ndaki gönderi rozetleri** artık üç şeyi birden sayıyor: sayı override'ları, kitle bölünmesi ve yüzdeler (`countPostEdits` / `usePostEditCount`, canlı güncelleniyor). `/simulation/media/<id>` ekranı elle ayarlı yüzde sayısını gösteriyor ve gönderi istatistiklerine götürüyor; oradaki "gerçek değerlere döndür" de üçünü birden temizliyor.
+- Senaryo store'u **version 5**.
+
+### 3.10 Gönderi istatistikleri ekranı, iOS Instagram'a birebir (kullanıcının ekran kaydı)
+
+Kullanıcının gönderdiği ekran kaydı (iOS, "Reels videosu istatistikleri") kare kare çıkarılıp eksik bölümler eklendi. Ekranın son hâli (`app/insights/post/[id].tsx` yeniden yazıldı):
+
+**Başlık** — sağda artık Instagram'daki gibi tek bir hapta **📈 + ⋯** var (eskiden yalnızca 📈 vardı, menü uzun basışla açılıyordu). ⋯ → senaryo menüsü (senaryo modu, Etkileşimi artır, Bu gönderinin kitlesi, Bu gönderi için senaryo, gerçek değerlere döndür).
+
+**Genel Bakış**
+- **Özet** kartları Reels'te değişti: Görüntülemeler · **Görüntüleyenler** · **Ortalama izlenme süresi** · Takipler (gönderide eskisi gibi Görüntülemeler · Erişilen hesaplar · Profil ziyaretleri · Takipler).
+- **Zaman içindeki görüntülemeler** artık günlük çizgi grafik değil: **kümülatif iki eğri** — bu gönderi (dolu macenta) ve *tipik gönderin* (kesikli gri) — 0 / ortadaki / son etiketiyle bir zaman penceresinde (`buildViewsOverTime`: pencere gönderinin yaşına göre 6h → 12h → 24h → 3d → 7d → 30d → 90d → 1y; gönderinin eğrisi kendi yaşında biter, tipik eğri pencerenin sonuna kadar gider). Yeni bileşen `components/charts/ComparisonChart.tsx`, altında nokta göstergeli açıklama.
+- **Görüntülemelerini etkileyen faktörler** (yeni): "Oranlar, erişim için önem sırasına göre listelenir." + 6 satır — Geçme · Paylaşım · Beğenme · Kaydetme · Yeniden paylaşım · Yorum oranı. Her satır: daire içinde ikon, oran, altında *Daha yüksek / Ortalama / Daha düşük*. **Yalnızca iyi haber yeşil**: geçme oranının yükselmesi yeşil değildir. Oranlar gönderinin kendi sayılarından türer (beğeni ÷ görüntüleme), yani senaryo kadranını açınca beğenme oranı da yükselir. `components/analytics/insights/FactorList.tsx`, yeni ikon `SkipRateIcon`.
+- **İnsanların Reels videonu izleme süresi** (yeni): küçük klip önizlemesi + %100'den başlayıp sönen izlenme eğrisi, x ekseni 0:00 → klip süresi (`components/charts/PlaybackChart.tsx`). Kaynak gerçek retention veriyorsa o kullanılır.
+- **Başlıca görüntüleme kaynakları** artık Reels'te de görünüyor (eskiden yalnızca fotoğrafta). Reels kaynak ağırlıkları videodaki dağılıma çekildi: Reels sekmesi ~%62–82, Keşfet, Akış, Profil, Hikayeler ("Diğer" kaldırıldı).
+- **Reklam** (yeni): "Bu Reels videosunu öne çıkar" satırı → Instagram'a devreden sheet.
+
+**Etkileşim** — Görüntülemeden sonra gerçekleştirilen eylemler + Etkileşimler listeleri aynı; sonuna **"İnsanlar Reels videonu gördüğünde"** (klip önizlemesi + dikenli etkileşim eğrisi, y ekseni 0/15/30 %) eklendi. Eski "Reels" bloğu (görüntülemeler / ortalama izlenme / tekrar izleme + retention) kaldırıldı — iOS'ta orada yok, izlenme süresi Özet'te.
+
+**Hedef Kitle** — Reels videonu görüntüleyen kişiler (Takipçiler macenta / Takipçi olmayanlar mor) + Yaş / Ülke / Cinsiyet çipleri; cinsiyet satırı **Erkekler önce**.
+
+**Her sayı uzun basılıp değiştirilebilir** (kullanıcının açık isteği):
+- Sayılar (beğeni, yorum, görüntüleme, erişim, profil ziyareti, takip, ortalama izlenme süresi…) eskisi gibi senaryo katmanından (`SimulationMetricEditor`).
+- **Yüzdeler yeni**: faktör oranları, görüntüleme kaynakları, yaş ve ülke çubukları, izlenme eğrisinin kuyruğu, etkileşim eğrisinin tepesi, tipik gönderi eğrisi — hepsi gönderi başına `mediaStats` override'ı (`store/simulationStore`, **version 4**), noktalı anahtarla: `factor.likes`, `source.reels`, `age.18-24`, `country.Türkiye`, `watch.end`, `engagement.peak`, `views.typical`. Uzun basış → `components/simulation/StatPercentSheet.tsx` (ortak `PercentField` kaydırıcı + sayı kutusu + hazır yüzdeler); "Gerçek değere dön" tek değeri geri verir, ⋯ → "Bu gönderiyi gerçek değerlere döndür" hepsini.
+- Bir çubuğu elle ayarlayınca **kalanlar oranlarını koruyarak yeniden dağıtılır**, toplam 100'de kalır (`applyBucketOverrides`).
+- Takipçi / cinsiyet oranları §3.9'daki kitle dağılımından gelir (uzun basış → `AudienceMixSheet`).
+
+**Yüzde biçimi** — Instagram tam sayıyı ondalıksız yazar: `%92`, `%2,8`; `formatShare` (`utils/format.ts`) bunu yapar ve işaret koymaz (eskiden `formatPercent` `+%92,0` üretiyordu). `InsightBars` satırları artık uzun basılabilir ve elle ayarlanmış değeri senaryo renginde gösterir.
+
+**Testler** — `__tests__/reelInsights.test.ts` (15) ve **ilk bileşen testi** `__tests__/postInsightsScreen.test.tsx` (4): ekran gerçekten mount edilip üç sekmenin bölüm başlıkları ve yüzde biçimi doğrulanıyor. Reanimated 4 jest'te native worklet runtime istediği için test dosyası içinde elle stub'lanıyor; `SafeAreaProvider` `initialMetrics` ile sarmalanıyor. Bu test zaten bir gerçek hatayı yakaladı (yüzdeler `+` işaretiyle çıkıyordu).
+
+**Bilerek yapılmayan**: ekran kaydında sayı ayıracı Türkçe'de de ABD biçiminde ("1,467"); uygulama yerel biçimi koruyor ("1.467"). Değiştirilmesi bütün ekranları etkilerdi.
+
+### 3.9 Kitle dağılımı (takipçi payı + cinsiyet) ve uygulama yazı tipi
+
+**Kitle dağılımı** — istatistiklerdeki iki oran artık tahmin değil, ayar:
+- Varsayılan **%0,7 takipçi / %99,3 takipçi olmayan** ve **%7 kadın / %93 erkek** (`DEFAULT_AUDIENCE_MIX`, `types/simulation.ts`).
+- Her gönderi temel değerin **±sapma** kadar etrafında kendi oranını alır (varsayılan takipçi ±%0,4, cinsiyet ±%2 → 5/95, 6/94, 8/92 gibi), sapma gönderi id'sinden türetildiği için **deterministik**: aynı video her açılışta aynı oranı gösterir. `services/analytics/audienceMix.ts` (`followerSplitFor`, `genderSplitFor`, `varyAround`, `normalizeMix`).
+- Elle düzenleme: **Senaryo Laboratuvarı → "Kitle dağılımı" kartı** (hesap geneli), **İstatistikler → Hedef kitle → cinsiyet çubuklarına uzun basış**, **Gönderi istatistikleri → ⋯ → "Bu gönderinin kitlesi"** ve **Hedef kitle sekmesindeki çubuklara uzun basış** (yalnız o gönderi), **`/simulation/media/<id>` kartı**. Bileşen: `components/simulation/AudienceMixEditor.tsx` (kaydırıcı + sayı kutusu + hazır yüzdeler; takipçi kaydırıcısı karesel ölçekli, çünkü 0–100 doğrusal bir kaydırıcıda %0,7 seçilemiyor). Gönderi ayarı "Genel dağılıma dön" ile sapmaya iade edilir.
+- Store: hesap düzeyinde `audienceMix` + `mediaAudienceMix` (senaryoya değil hesaba bağlı; senaryo değiştirmek oranları değiştirmez), `setAudienceMix / resetAudienceMix / setMediaAudienceMix / clearMediaAudienceMix`. **Senaryo store'u `version: 3`** — eski kayıtlar sanitizer üzerinden varsayılanlara oturur.
+- Okuma tarafı tek yerden: `features/analytics/useAudienceSplits.ts` → `useEffectiveAudience()` (sağlayıcı ne döndürürse döndürsün iki oranı karışımdan yazar; yaş/şehir/ülke/aktif saatler olduğu gibi kalır) ve `usePostAudienceSplits(mediaId)`. `useInsightsData`, `AudienceTab`, `OverviewTab` ve gönderi istatistikleri aynı kaynağı okuduğu için hesap ve gönderi ekranları birbiriyle çelişmiyor. `estimateAudience` / `DEMO_AUDIENCE` / `buildPostBreakdown` da karışımı kullanıyor (eski rastgele %28–68 kadın ve %30–65 takipçi payı kaldırıldı). Hem hesap hem gönderi çubuklarında **erkek satırı önce** (Instagram büyükten küçüğe sıralar).
+- Testler: `__tests__/audienceMix.test.ts` (10) + `postInsights.test.ts` güncellendi + `persistence.test.ts`'e v3 / karışım doğrulaması eklendi.
+
+**Yazı tipi** — Instagram'ın Instagram Sans'ı lisanslanamıyor; en yakın karşılığı olan **Inter**'in dört statik kesimi pakete eklendi (`assets/fonts/Inter-{Regular,Medium,SemiBold,Bold}.ttf`, Google Fonts).
+- `constants/fonts.ts`: `fontStyleForWeight(weight)` → `{ fontFamily, fontWeight }` çifti. **İkisi birlikte kullanılmalı**: Android özel bir aile atandığında `fontWeight`'i yok sayar (kalınlık aile adında olmalı), iOS önce aileyi çözüp ağırlığı uygular (uyuşmazsa başka kesim seçer).
+- `constants/theme.ts` → `typography` her varyantta aileyi ve Instagram'ın sıkı harf aralığını taşır (`letterSpacingFor`: ≥24px −0,5 … ≤13px 0).
+- `components/common/Text.tsx` tek geçiş noktası: varyanttan, `weight` prop'undan **veya çağıranın `style`'ındaki `fontWeight`'ten** gelen ağırlığı doğru Inter kesimine çevirir, harf aralığını son font boyutuna göre ayarlar. Ham `Text`/`TextInput` kullanan yerler (`Wordmark`, `AppErrorBoundary`, bütün giriş kutuları) `fontStyles.*` ile aynı aileye bağlandı.
+- Yükleme: `app/_layout.tsx` içinde `useFonts(fontAssets)`; splash font hazır olana kadar açık kalıyor, yükleme başarısız olursa sistem fontuna düşülüp devam ediliyor. Native derlemede gömülmesi için `app.json` → `expo-font` eklentisi (APK/IPA için `expo prebuild` / EAS build gerekir).
 
 ### 3.8 Kalıcı senaryo hafızası ve çökme koruması
 - `store/persistence.ts` → **`durableStorage`**: AsyncStorage sarmalayıcısı; hiç fırlatmaz, geçersiz JSON döndürmez, her yazımda `<anahtar>.bak` yedeği bırakır. Okumada asıl değer bozuksa yedek kullanılır (ve asıl onarılır), yedek de yoksa varsayılanlara dönülür. Yazma hataları sessizce yutulur (UI için asla ölümcül değil). Senaryo/ayar/manuel profil store'ları buna geçti; oturum SecureStore'da kaldı.

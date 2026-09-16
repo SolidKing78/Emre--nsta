@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text as RNText, View } from 'react-native';
 
 import { APP_NAME } from '@/constants/config';
+import { fontStyles } from '@/constants/fonts';
 import { useTheme } from '@/hooks/useTheme';
 
 /** SocialLens logotype for the feed header (own brand, not an Instagram asset). */
@@ -19,7 +20,7 @@ export function Wordmark({ size = 26 }: { size?: number }) {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   text: {
-    fontWeight: '700',
+    ...fontStyles.bold,
     letterSpacing: -0.8,
     fontStyle: 'italic',
     includeFontPadding: false,

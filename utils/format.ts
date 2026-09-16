@@ -58,6 +58,17 @@ export function formatPercent(value: number, locale: NumberLocale = 'en', digits
   return locale === 'tr' ? `${sign}%${text}` : `${sign}${text}%`;
 }
 
+/**
+ * A share, the way Instagram prints one in its insight bars: one decimal, but a whole
+ * number stays whole — "%92" next to "%2,8", never "%92,0". Never signed.
+ */
+export function formatShare(value: number, locale: NumberLocale = 'en'): string {
+  if (!Number.isFinite(value)) return '—';
+  const rounded = Math.abs(Math.round(value * 10) / 10);
+  const text = rounded.toFixed(Number.isInteger(rounded) ? 0 : 1).replace('.', DECIMAL[locale]);
+  return locale === 'tr' ? `%${text}` : `${text}%`;
+}
+
 export function percentChange(current: number, previous: number | undefined): number | null {
   if (previous === undefined || previous === 0) return null;
   return ((current - previous) / previous) * 100;

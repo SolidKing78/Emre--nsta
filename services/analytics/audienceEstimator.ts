@@ -1,4 +1,6 @@
+import { accountGenderSplit, clampPercent } from '@/services/analytics/audienceMix';
 import type { AppAudience, AudienceBucket, MetricSource } from '@/types/app';
+import { DEFAULT_AUDIENCE_MIX, type AudienceMix } from '@/types/simulation';
 import { createRng } from '@/utils/random';
 
 const AGE_LABELS = ['13-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+'];
@@ -21,10 +23,12 @@ function buckets(labels: string[], weights: number[]): AudienceBucket[] {
 /**
  * Deterministic audience profile for sources that cannot expose demographics
  * (public / manual). Seeded by the username so it is stable across restarts.
+ *
+ * The follower and gender splits are not guessed: they come straight from the audience
+ * mix, which is what the user sets in the app.
  */
-export function estimateAudience(seed: string, source: MetricSource = 'estimated'): AppAudience {
+export function estimateAudience(seed: string, source: MetricSource = 'estimated', mix: AudienceMix = DEFAULT_AUDIENCE_MIX): AppAudience {
   const rng = createRng(`audience-${seed}`);
-  const women = Math.round((28 + rng() * 40) * 10) / 10;
   const ageWeights = [1 + rng() * 2, 12 + rng() * 14, 26 + rng() * 16, 18 + rng() * 12, 8 + rng() * 8, 3 + rng() * 5, 1 + rng() * 3];
   const cityWeights = CITIES.map((_, i) => Math.max(1, 34 - i * 5 + (rng() - 0.5) * 8));
   const countryWeights = [78 + rng() * 14, 3 + rng() * 5, 2 + rng() * 3, 1 + rng() * 2, 1 + rng() * 2];
@@ -35,8 +39,8 @@ export function estimateAudience(seed: string, source: MetricSource = 'estimated
     return Math.min(1, evening + noon + night + (rng() - 0.5) * 0.08);
   });
   return {
-    followerShare: Math.round((0.3 + rng() * 0.35) * 1000) / 1000,
-    gender: { women, men: Math.round((100 - women) * 10) / 10 },
+    followerShare: clampPercent(mix.followerShare) / 100,
+    gender: accountGenderSplit(mix),
     ages: buckets(AGE_LABELS, ageWeights),
     cities: buckets(CITIES, cityWeights).slice(0, 5),
     countries: buckets(COUNTRIES, countryWeights).slice(0, 5),
@@ -46,8 +50,8 @@ export function estimateAudience(seed: string, source: MetricSource = 'estimated
 }
 
 export const DEMO_AUDIENCE: AppAudience = {
-  followerShare: 0.382,
-  gender: { women: 31.8, men: 68.2 },
+  followerShare: DEFAULT_AUDIENCE_MIX.followerShare / 100,
+  gender: { women: DEFAULT_AUDIENCE_MIX.womenShare, men: 100 - DEFAULT_AUDIENCE_MIX.womenShare },
   ages: [
     { label: '25-34', value: 38.4 },
     { label: '35-44', value: 27.1 },

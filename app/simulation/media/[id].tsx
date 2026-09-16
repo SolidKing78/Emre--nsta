@@ -6,17 +6,19 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { MetricRow } from '@/components/analytics/MetricRow';
 import { AppHeader } from '@/components/common/AppHeader';
 import { Button } from '@/components/common/Button';
-import { Card, Chip } from '@/components/common/Primitives';
+import { Card, Chip, ListRow } from '@/components/common/Primitives';
 import { Screen } from '@/components/common/Screen';
 import { PostSkeleton } from '@/components/common/Skeleton';
 import { ErrorState } from '@/components/common/States';
 import { Text } from '@/components/common/Text';
+import { AudienceMixEditor } from '@/components/simulation/AudienceMixEditor';
+import { InsightsIcon } from '@/components/icons';
 import { CompareTable, type CompareRow } from '@/components/simulation/CompareTable';
 import { ModeSwitch } from '@/components/simulation/ModeSwitch';
 import { SimulationBadge } from '@/components/simulation/SimulationBadge';
 import { radius, spacing } from '@/constants/theme';
 import { useMediaDetail } from '@/features/instagram/useMediaDetail';
-import { useDisplayMetrics, useSimulationActions, useSimulationEnabled, useSimulationIndicators } from '@/features/simulation/useSimulation';
+import { useDisplayMetrics, useMediaStats, useSimulationActions, useSimulationEnabled, useSimulationIndicators } from '@/features/simulation/useSimulation';
 import { triggerHaptic } from '@/hooks/useHaptics';
 import { useTheme } from '@/hooks/useTheme';
 import { upperCase, useLanguage, useT } from '@/i18n';
@@ -36,6 +38,8 @@ export default function MediaSimulationScreen() {
   const indicators = useSimulationIndicators();
   const actions = useSimulationActions();
   const detail = useMediaDetail(id);
+  // The percentages themselves are edited on the insights screen, where they are shown.
+  const pinnedPercentages = Object.keys(useMediaStats(id)).length;
 
   // The same metric set the "Gönderi istatistikleri" screen shows, so edits line up 1:1.
   const baseMetrics = useMemo<AppMetric[]>(() => {
@@ -56,6 +60,8 @@ export default function MediaSimulationScreen() {
 
   const resetPost = () => {
     for (const key of SIMULATABLE_MEDIA_METRICS as MetricKey[]) actions.clearOverride(detail.scope, key);
+    actions.clearMediaStats(id);
+    actions.clearMediaAudienceMix(id);
     triggerHaptic('warning');
   };
 
@@ -123,6 +129,26 @@ export default function MediaSimulationScreen() {
               {t('sim.longPressHint')}
             </Text>
 
+            <Text variant="captionStrong" color="secondary" style={styles.sectionLabel}>
+              {upperCase(t('audienceMix.postTitle'), language)}
+            </Text>
+            <Card style={styles.card}>
+              <AudienceMixEditor mediaId={id} compact />
+            </Card>
+
+            {/* The reach factors, view sources and playback curves are edited where they are drawn. */}
+            <Text variant="captionStrong" color="secondary" style={styles.sectionLabel}>
+              {upperCase(t('postInsights.menuStats'), language)}
+            </Text>
+            <View style={[styles.list, { borderColor: colors.borderStrong }]}>
+              <ListRow
+                title={t('postInsights.factors')}
+                subtitle={pinnedPercentages > 0 ? t('postStats.pinned', { n: pinnedPercentages }) : t('postInsights.longPressHint')}
+                icon={<InsightsIcon size={22} color={colors.text} />}
+                onPress={() => router.push(`/insights/post/${id}`)}
+              />
+            </View>
+
             {compareRows.length > 0 ? (
               <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.xl }}>
                 <CompareTable rows={compareRows} title={t('sim.compareTitle')} subtitle={detail.media.caption.split('\n')[0]} />
@@ -147,6 +173,7 @@ const styles = StyleSheet.create({
   presets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingHorizontal: spacing.lg },
   preset: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill },
   card: { marginHorizontal: spacing.lg, paddingVertical: spacing.xs },
+  list: { marginHorizontal: spacing.lg, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, overflow: 'hidden' },
   hint: { paddingHorizontal: spacing.lg, marginTop: spacing.sm },
   actions: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
 });
